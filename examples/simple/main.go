@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/TFMV/blink/pkg/blink"
 )
@@ -30,9 +29,16 @@ func main() {
 	fmt.Printf("Blink Example\n")
 	fmt.Printf("------------\n")
 	fmt.Printf("Watching directory: %s\n", path)
-	fmt.Printf("Serving events at: http://localhost:12345/events\n")
 	fmt.Printf("Using %d CPUs\n", maxProcs)
 	fmt.Printf("Press Ctrl+C to stop\n\n")
+
+	// Create a new filesystem watcher
+	watcher, err := blink.NewRecursiveWatcher(path)
+	if err != nil {
+		fmt.Printf("Error creating watcher: %v\n", err)
+		os.Exit(1)
+	}
+	defer watcher.Close()
 
 	// Create a channel to receive OS signals
 	sigs := make(chan os.Signal, 1)
@@ -40,30 +46,28 @@ func main() {
 	// Register for SIGINT (Ctrl+C) and SIGTERM
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start the event server in a goroutine
-	done := make(chan bool, 1)
-	go func() {
-		// Start the event server with default settings
-		blink.EventServer(
-			path,                 // Directory to watch
-			"*",                  // Allow all origins
-			":12345",             // Listen on port 12345
-			"/events",            // Event path
-			100*time.Millisecond, // Refresh duration
-		)
+	// Create a channel to track events
+	events := make(chan blink.Event, 100)
 
-		// Signal that we're done (this should never happen unless EventServer returns)
-		done <- true
+	// Start a goroutine to collect events
+	go func() {
+		for {
+			select {
+			case ev := <-watcher.Events:
+				event := blink.Event(ev)
+				events <- event
+				fmt.Printf("Event: %s %s\n", event.Op.String(), event.Name)
+			case err := <-watcher.Errors:
+				fmt.Printf("Error: %v\n", err)
+			}
+		}
 	}()
 
-	// Wait for a signal or for the server to exit
-	select {
-	case sig := <-sigs:
-		fmt.Printf("\nReceived signal %v, shutting down...\n", sig)
-	case <-done:
-		fmt.Println("\nServer exited unexpectedly")
-	}
+	fmt.Println("Watching for file changes. Events will be printed below:")
+	fmt.Println("------------------------------------------------------")
 
-	// Perform any cleanup here if needed
-	fmt.Println("Goodbye!")
+	// Wait for a signal or for the watcher to exit
+	<-sigs
+
+	fmt.Println("\nShutting down...")
 }

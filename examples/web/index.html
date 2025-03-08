@@ -1,79 +1,227 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blink Example</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blink File Watcher</title>
+    <!-- Modern Google Fonts - Inter is a great alternative to Roboto -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary-color: #2e86de;
+            /* Modern Blue */
+            --primary-color-hover: #2471c6;
+            --secondary-color: #6c757d;
+            /* Subtle Gray */
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+            --background-color: #f8f9fa;
+            /* Light Gray */
+            --container-bg-color: #ffffff;
+            /* White */
+            --text-color: #212529;
+            /* Dark Gray/Black */
+            --border-color: #dee2e6;
+            /* Lighter Gray */
+            --box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+            /* Subtle shadow */
+            --border-radius: 6px;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            /* Important for centering */
         }
-        h1 {
-            color: #333;
+
+        .container {
+            background-color: var(--container-bg-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            padding: 2rem;
+            width: 90%;
+            max-width: 700px;
+            /* Slightly smaller for better readability on large screens */
         }
-        #events {
-            border: 1px solid #ccc;
-            padding: 10px;
-            height: 300px;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            background-color: #f9f9f9;
+
+        .page-title {
+            font-size: 2.25rem;
+            /* Larger font size */
+            font-weight: 600;
+            /* Semibold */
+            text-align: center;
+            margin-bottom: 1.5rem;
+            /* Space below title */
+            color: var(--primary-color);
+            /* Use primary color for the title */
         }
-        .event {
-            margin-bottom: 5px;
-            padding: 5px;
-            border-bottom: 1px solid #eee;
+
+        .status-indicator {
+            text-align: center;
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--border-radius);
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+            transition: background-color 0.3s, color 0.3s;
         }
-        .event-time {
-            color: #666;
-            font-size: 0.8em;
+
+        .status-connected {
+            background-color: #d4edda;
+            /* Lighter green */
+            color: var(--success-color);
+            border: 1px solid #c3e6cb;
+            /* Slightly darker green border */
         }
-        .event-path {
-            font-weight: bold;
+
+        .status-disconnected {
+            background-color: #f8d7da;
+            /* Lighter red */
+            color: var(--danger-color);
+            border: 1px solid #f5c6cb;
+            /* Slightly darker red border */
         }
-        button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
-            color: white;
+
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            /* Use gap for spacing */
+            margin-bottom: 2rem;
+        }
+
+        .btn {
+            padding: 0.6rem 1.5rem;
+            /* Slightly smaller padding */
+            font-size: 1rem;
             border: none;
+            border-radius: var(--border-radius);
             cursor: pointer;
-            margin-right: 10px;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            /* Added transform for subtle effect */
+            font-weight: 500;
+            /* Medium weight */
+            text-transform: uppercase;
+            /* Make the button text uppercase */
+            letter-spacing: 0.5px;
+            /* Add some letter spacing */
+            background-color: var(--primary-color);
+            /*Default use primary color */
+            color: white;
+
         }
-        button:hover {
-            background-color: #45a049;
+
+        .btn-clear {
+            background-color: var(--secondary-color);
+            color: white;
         }
-        #status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 4px;
+
+        .btn-disconnect {
+            background-color: var(--danger-color);
+            color: white;
         }
-        .connected {
-            background-color: #dff0d8;
-            color: #3c763d;
+
+        .btn:hover {
+            transform: translateY(-2px);
+            /* Lift the button slightly */
         }
-        .disconnected {
-            background-color: #f2dede;
-            color: #a94442;
+
+        /*Specific hovers*/
+        .btn-connect:hover {
+            background-color: var(--primary-color-hover);
+        }
+
+        .btn-disconnect:hover {
+            background-color: #c82333;
+        }
+
+        .btn-clear:hover {
+            background-color: #5a6268;
+        }
+
+
+        .events-section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-color);
+            border-bottom: 2px solid var(--border-color);
+            /* A more subtle border */
+            padding-bottom: 0.5rem;
+            /* Space below the border */
+        }
+
+        .events-list {
+            max-height: 400px;
+            /* Increased max-height */
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            background-color: var(--background-color);
+            /* Use the page background */
+        }
+
+        .event-item {
+            background-color: var(--container-bg-color);
+            /* White */
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            box-shadow: var(--box-shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+        }
+
+        .event-item:hover {
+            transform: scale(1.02);
+            /* Slightly enlarge on hover */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+            /* Larger shadow on hover */
+        }
+
+        .event-time {
+            color: var(--secondary-color);
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .event-path {
+            font-weight: 500;
+            word-break: break-all;
+            /* Ensure long paths don't overflow */
+
         }
     </style>
 </head>
+
 <body>
-    <h1>Blink File Change Monitor</h1>
-    
-    <div id="status" class="disconnected">Disconnected</div>
-    
-    <div>
-        <button id="connect">Connect</button>
-        <button id="disconnect">Disconnect</button>
-        <button id="clear">Clear Events</button>
+    <div class="container">
+        <h1 class="page-title">Blink File Watcher</h1>
+
+        <div id="status" class="status-indicator status-disconnected">Disconnected</div>
+
+        <div class="button-group">
+            <button id="connect" class="btn btn-connect">Connect</button>
+            <button id="disconnect" class="btn btn-disconnect">Disconnect</button>
+            <button id="clear" class="btn btn-clear">Clear Events</button>
+        </div>
+
+        <h2 class="events-section-title">File Change Events</h2>
+        <div id="events" class="events-list"></div>
     </div>
-    
-    <h2>File Change Events</h2>
-    <div id="events"></div>
-    
+
     <script>
         let eventSource = null;
         const eventsContainer = document.getElementById('events');
@@ -81,77 +229,141 @@
         const connectButton = document.getElementById('connect');
         const disconnectButton = document.getElementById('disconnect');
         const clearButton = document.getElementById('clear');
-        
+
         // Connect to the event source
         function connect() {
             if (eventSource) {
                 disconnect();
             }
+
+            console.log('Attempting to connect to event source...');
             
-            // Create a new EventSource
-            eventSource = new EventSource('http://localhost:12345/events');
+            // Try different URLs for the event source
+            // This helps with different server configurations
+            // Try both IPv4 and IPv6 formats
+            let serverHost;
             
-            // Event handlers
-            eventSource.onopen = function() {
-                statusElement.textContent = 'Connected';
-                statusElement.className = 'connected';
-                console.log('Connected to event source');
-            };
+            // Check if we're on an IPv6 connection
+            if (window.location.hostname === '::' || window.location.hostname === '[::1]') {
+                // Use IPv6 format
+                serverHost = '[::1]';
+            } else {
+                // Use IPv4 format
+                serverHost = 'localhost'; // or '127.0.0.1'
+            }
             
-            eventSource.onmessage = function(event) {
-                console.log('Received event:', event.data);
-                
-                // Create event element
-                const eventElement = document.createElement('div');
-                eventElement.className = 'event';
-                
-                // Add timestamp
-                const timeElement = document.createElement('div');
-                timeElement.className = 'event-time';
-                timeElement.textContent = new Date().toLocaleTimeString();
-                eventElement.appendChild(timeElement);
-                
-                // Add file path
-                const pathElement = document.createElement('div');
-                pathElement.className = 'event-path';
-                pathElement.textContent = event.data;
-                eventElement.appendChild(pathElement);
-                
-                // Add to container
-                eventsContainer.appendChild(eventElement);
-                
-                // Scroll to bottom
-                eventsContainer.scrollTop = eventsContainer.scrollHeight;
-            };
+            const serverPort = '12345';
+            const eventPath = '/events';
             
-            eventSource.onerror = function() {
-                statusElement.textContent = 'Error connecting to event source';
-                statusElement.className = 'disconnected';
-                console.error('Error connecting to event source');
-                disconnect();
-            };
+            const eventUrl = `http://${serverHost}:${serverPort}${eventPath}`;
+            console.log('Connecting to:', eventUrl);
+            
+            try {
+                // Create the EventSource with the withCredentials option set to false
+                // This can help with CORS issues
+                eventSource = new EventSource(eventUrl);
+                
+                // Log the readyState
+                console.log('Initial readyState:', eventSource.readyState);
+                
+                // Check connection status after a delay
+                setTimeout(() => {
+                    if (eventSource) {
+                        console.log('Current readyState:', eventSource.readyState);
+                        if (eventSource.readyState === 1) {
+                            statusElement.textContent = 'Connected';
+                            statusElement.classList.remove('status-disconnected');
+                            statusElement.classList.add('status-connected');
+                            console.log('Connected to event source');
+                        } else {
+                            console.log('Not connected after timeout');
+                        }
+                    }
+                }, 2000);
+
+                // Handle messages
+                eventSource.onmessage = function (event) {
+                    console.log('Received event:', event.data);
+
+                    const eventElement = document.createElement('div');
+                    eventElement.className = 'event-item';
+
+                    const timeElement = document.createElement('div');
+                    timeElement.className = 'event-time';
+                    timeElement.textContent = new Date().toLocaleTimeString();
+                    eventElement.appendChild(timeElement);
+
+                    const pathElement = document.createElement('div');
+                    pathElement.className = 'event-path';
+                    pathElement.textContent = event.data;
+                    eventElement.appendChild(pathElement);
+
+                    eventsContainer.appendChild(eventElement);
+                    eventsContainer.scrollTop = eventsContainer.scrollHeight;
+                    
+                    // Update status if not already connected
+                    if (!statusElement.classList.contains('status-connected')) {
+                        statusElement.textContent = 'Connected';
+                        statusElement.classList.remove('status-disconnected');
+                        statusElement.classList.add('status-connected');
+                    }
+                };
+
+                // Handle errors
+                eventSource.onerror = function (error) {
+                    console.error('Error with event source:', error);
+                    
+                    // Check the readyState
+                    console.log('Error readyState:', eventSource.readyState);
+                    
+                    statusElement.textContent = 'Error connecting';
+                    statusElement.classList.remove('status-connected');
+                    statusElement.classList.add('status-disconnected');
+                    
+                    // Only disconnect if the connection is closed (readyState 2)
+                    if (eventSource && eventSource.readyState === 2) {
+                        console.log('Connection closed, disconnecting');
+                        disconnect();
+                    } else {
+                        console.log('Error occurred but connection might recover');
+                    }
+                };
+            } catch (error) {
+                console.error('Failed to create EventSource:', error);
+                statusElement.textContent = 'Connection failed';
+                statusElement.classList.remove('status-connected');
+                statusElement.classList.add('status-disconnected');
+            }
         }
-        
+
         // Disconnect from the event source
         function disconnect() {
             if (eventSource) {
+                console.log('Closing event source connection');
                 eventSource.close();
                 eventSource = null;
                 statusElement.textContent = 'Disconnected';
-                statusElement.className = 'disconnected';
+                statusElement.classList.remove('status-connected');
+                statusElement.classList.add('status-disconnected');
                 console.log('Disconnected from event source');
             }
         }
-        
+
         // Clear events
         function clearEvents() {
             eventsContainer.innerHTML = '';
         }
-        
-        // Event listeners
+
+        // Add event listeners
         connectButton.addEventListener('click', connect);
         disconnectButton.addEventListener('click', disconnect);
         clearButton.addEventListener('click', clearEvents);
+        
+        // Log any unhandled errors
+        window.addEventListener('error', function(event) {
+            console.error('Unhandled error:', event.error);
+        });
     </script>
 </body>
-</html> 
+
+</html>
