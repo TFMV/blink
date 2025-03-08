@@ -15,12 +15,14 @@ Blink is a high-performance file system watcher that monitors directories for ch
   - Worker pools for handling large directory structures
   - Non-blocking channel operations
   - Efficient memory usage with periodic cleanup
+- Robust CLI with configuration management using Cobra and Viper
 
 ## Project Structure
 
 This project follows the standard Go project layout:
 
 - `cmd/blink/`: Contains the CLI application (package `main`)
+  - `cmd/`: Contains the Cobra command definitions
 - `pkg/blink/`: Contains the library code (package `blink`)
 - `examples/`: Contains example applications
 
@@ -54,7 +56,7 @@ blink -path /path/to/watch -event-addr :12345 -event-path /events
 
 ### Command-line Options
 
-- `-path`: Directory path to watch for changes (default: ".")
+- `-path`: Directory path to watch for changes (must be a valid directory) (default: ".")
 - `-allowed-origin`: Value for Access-Control-Allow-Origin header (default: "*")
 - `-event-addr`: Address to serve events on ([host][:port]) (default: ":12345")
 - `-event-path`: URL path for the event stream (default: "/events")
@@ -62,6 +64,29 @@ blink -path /path/to/watch -event-addr :12345 -event-path /events
 - `-verbose`: Enable verbose logging (default: false)
 - `-max-procs`: Maximum number of CPUs to use (default: all available)
 - `-help`: Show help
+
+### Configuration Management
+
+Blink supports configuration through:
+
+1. Command-line flags
+2. Environment variables
+3. Configuration file (YAML)
+
+You can manage configuration using the `config` subcommand:
+
+```bash
+# List all configuration values
+blink config list
+
+# Get a specific configuration value
+blink config get path
+
+# Set a configuration value
+blink config set path /path/to/watch
+```
+
+Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config` flag.
 
 ## Example
 
