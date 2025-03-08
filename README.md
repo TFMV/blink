@@ -15,30 +15,13 @@ Blink is a high-performance file system watcher that monitors directories for ch
   - Worker pools for handling large directory structures
   - Non-blocking channel operations
   - Efficient memory usage with periodic cleanup
-- Robust CLI with configuration management using Cobra and Viper
-
-## Project Structure
-
-This project follows the standard Go project layout:
-
-- `cmd/blink/`: Contains the CLI application (package `main`)
-  - `cmd/`: Contains the Cobra command definitions
-- `pkg/blink/`: Contains the library code (package `blink`)
-- `examples/`: Contains example applications
-
-This separation of concerns allows:
-
-- Using Blink as a library in other Go projects
-- Installing the CLI tool independently
-- Clear distinction between public API and implementation details
+- Robust CLI with configuration management
 
 ## Installation
 
 ```bash
 go install github.com/TFMV/blink/cmd/blink@latest
 ```
-
-> **Note:** The installation path includes `/cmd/blink` because that's where the main executable is located, following Go's standard project layout. This structure separates the reusable library code (in `pkg/blink`) from the command-line interface (in `cmd/blink`).
 
 Or clone the repository and build manually:
 
@@ -130,16 +113,6 @@ func main() {
     select {}
 }
 ```
-
-## Performance Considerations
-
-Blink is designed to be efficient even when watching large directory structures:
-
-- Uses worker pools for parallel directory scanning
-- Implements event debouncing to reduce duplicate events
-- Uses non-blocking channel operations to prevent goroutine leaks
-- Periodically cleans up old events to prevent memory leaks
-- Provides configurable CPU usage control
 
 ## Examples
 
