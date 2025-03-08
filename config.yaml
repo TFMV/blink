@@ -1,0 +1,38 @@
+# Blink Configuration File
+# This file can be placed at $HOME/.blink.yaml or specified with --config flag
+# Default values are shown below
+# Directory path to watch for changes
+path: "."
+
+# Value for Access-Control-Allow-Origin header
+allowed-origin: "*"
+
+# Address to serve events on ([host][:port])
+event-addr: ":12345"
+
+# URL path for the event stream
+event-path: "/events"
+
+# Refresh duration for events (in milliseconds)
+# This controls how frequently old events are cleaned up
+refresh: 100ms
+
+# Enable verbose logging
+verbose: false
+
+# Maximum number of CPUs to use
+# Set to 0 to use all available CPUs
+max-procs: 0
+# Advanced configuration options
+
+# List of file patterns to ignore (in addition to default patterns)
+# ignore-patterns:
+#   - "*.tmp"
+#   - "node_modules"
+#   - "*.log"
+
+# Custom timeout for event server shutdown (in seconds)
+# shutdown-timeout: 5s
+
+# Enable debug mode for more detailed logging
+# debug: false
