@@ -114,6 +114,50 @@ func main() {
 }
 ```
 
+## Testing and Benchmarking
+
+Blink includes a comprehensive test suite and benchmarks to ensure reliability and performance.
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run tests without integration tests
+make test-short
+```
+
+The test suite includes:
+
+- Unit tests for core functionality
+- Integration tests for the event server
+- Tests for file system operations
+
+Current test coverage: ~67% of statements in the core package.
+
+### Running Benchmarks
+
+```bash
+# Run benchmarks
+make benchmark
+```
+
+Benchmark results show excellent performance:
+
+- `ShouldIgnoreFile`: ~30.57 ns/op, 0 B/op, 0 allocs/op
+- `RemoveOldEvents`: ~121779 ns/op for 1000 events
+- `Subfolders`: Fast directory scanning with optimized memory usage
+
+### Generating Coverage Reports
+
+```bash
+# Generate test coverage report
+make coverage
+```
+
+This will create a coverage report and open it in your browser.
+
 ## Examples
 
 Check the `examples/` directory for usage examples:
