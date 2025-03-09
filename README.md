@@ -1,7 +1,7 @@
 [![Build](https://github.com/TFMV/blink/actions/workflows/ci.yml/badge.svg)](https://github.com/TFMV/blink/actions/workflows/ci.yml)
 [![Go 1.24](https://img.shields.io/badge/Go-1.24-blue)](https://golang.org/doc/go1.24)
 [![Go Report Card](https://goreportcard.com/badge/github.com/TFMV/blink)](https://goreportcard.com/report/github.com/TFMV/blink)
-[![Docs Website](https://img.shields.io/badge/docs-website-brightgreen)](https://github.com/TFMV/blink)
+[![Docs Website](https://img.shields.io/badge/docs-website-brightgreen)](https://tfmv.github.io/blink/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/TFMV/blink.svg)](https://pkg.go.dev/github.com/TFMV/blink)
 [![Release](https://img.shields.io/github/v/release/TFMV/blink)](https://github.com/TFMV/blink/releases)
 [![License](https://img.shields.io/github/license/TFMV/blink)](https://github.com/TFMV/blink/blob/main/LICENSE)
