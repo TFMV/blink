@@ -1,0 +1,322 @@
+/* Custom styles for Blink documentation */
+
+/* Load FontAwesome for icons */
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
+
+/* Primary color */
+:root {
+  --md-primary-fg-color: #2979ff;
+  --md-primary-fg-color--light: #5393ff;
+  --md-primary-fg-color--dark: #0053cb;
+  --md-accent-fg-color: #2979ff;
+}
+
+/* Code blocks */
+.md-typeset pre {
+  border-radius: 6px;
+}
+
+/* Admonitions */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 6px;
+}
+
+/* Cards */
+.md-typeset .grid.cards > ul > li {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Tables */
+.md-typeset table:not([class]) {
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color--light);
+  color: white;
+}
+
+/* Tabs */
+.md-typeset .tabbed-set > .tabbed-content {
+  border-radius: 0 6px 6px 6px;
+}
+
+.md-typeset .tabbed-set > .tabbed-labels > label {
+  border-radius: 6px 6px 0 0;
+}
+
+/* Buttons */
+.md-typeset .md-button {
+  border-radius: 6px;
+}
+
+/* Headings */
+.md-typeset h1, 
+.md-typeset h2, 
+.md-typeset h3, 
+.md-typeset h4, 
+.md-typeset h5, 
+.md-typeset h6 {
+  font-weight: 600;
+  color: var(--md-primary-fg-color--dark);
+}
+
+/* Code annotations */
+.md-typeset code {
+  border-radius: 4px;
+}
+
+/* Footer */
+.md-footer {
+  background-color: var(--md-primary-fg-color--dark);
+}
+
+/* Navigation */
+.md-nav__link:hover {
+  color: var(--md-accent-fg-color);
+}
+
+/* Search form */
+.md-search__form {
+  border-radius: 6px;
+}
+
+/* Custom classes */
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.font-bold {
+  font-weight: bold;
+}
+
+.font-italic {
+  font-style: italic;
+}
+
+.highlight {
+  background-color: rgba(41, 121, 255, 0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* Copy button for code blocks */
+.copy-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--md-primary-fg-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+pre:hover .copy-button {
+  opacity: 1;
+}
+
+/* Version selector */
+.version-selector {
+  margin-left: 1rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  background-color: transparent;
+  color: white;
+  font-size: 0.8rem;
+}
+
+/* Scroll to top button */
+.scroll-to-top {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 3rem;
+  height: 3rem;
+  background-color: var(--md-primary-fg-color);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 100;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.scroll-to-top.visible {
+  opacity: 0.8;
+  transform: translateY(0);
+}
+
+.scroll-to-top:hover {
+  opacity: 1;
+}
+
+/* Search enhancements */
+.search-suggestions {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.search-suggestions__title {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.5rem;
+}
+
+.search-suggestions__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.search-suggestions__item {
+  background-color: var(--md-primary-fg-color--light);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.search-suggestions__item:hover {
+  background-color: var(--md-primary-fg-color);
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .search-suggestions {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+[data-md-color-scheme="slate"] .search-suggestions__title {
+  color: var(--md-default-fg-color--light);
+}
+
+/* Custom footer */
+.md-footer-custom {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.footer-links {
+  margin-bottom: 0.3rem;
+}
+
+.footer-links a {
+  color: var(--md-footer-fg-color--light);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-links a:hover {
+  color: var(--md-footer-fg-color);
+  text-decoration: underline;
+}
+
+.footer-link-divider {
+  margin: 0 0.5rem;
+  color: var(--md-footer-fg-color--lighter);
+}
+
+.footer-tagline {
+  color: var(--md-footer-fg-color--light);
+  font-style: italic;
+}
+
+/* Custom header */
+.md-header__version-select {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.md-version {
+  position: relative;
+}
+
+.md-version__current {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  background-color: transparent;
+  color: white;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.md-version__current::after {
+  content: "▼";
+  font-size: 0.5rem;
+  margin-left: 0.3rem;
+}
+
+.md-version__list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  display: none;
+  min-width: 150px;
+  margin: 0;
+  padding: 0.5rem 0;
+  background-color: var(--md-default-bg-color);
+  border-radius: 4px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  list-style: none;
+}
+
+.md-version:hover .md-version__list {
+  display: block;
+}
+
+.md-version__item {
+  margin: 0;
+  padding: 0;
+}
+
+.md-version__link {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: var(--md-default-fg-color);
+  text-decoration: none;
+  font-size: 0.7rem;
+}
+
+.md-version__link:hover {
+  background-color: var(--md-primary-fg-color--light);
+  color: white;
+}
+
+.md-version__link--active {
+  background-color: var(--md-primary-fg-color--transparent);
+  color: var(--md-primary-fg-color);
+  font-weight: bold;
+} 

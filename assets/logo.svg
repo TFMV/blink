@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background circle -->
+    <circle cx="100" cy="100" r="90" fill="#2979ff" />
+
+    <!-- Eye shape -->
+    <ellipse cx="100" cy="100" rx="45" ry="60" fill="white" />
+
+    <!-- Pupil -->
+    <circle cx="100" cy="100" r="25" fill="#263238" />
+
+    <!-- Highlight -->
+    <circle cx="85" cy="85" r="10" fill="white" />
+
+    <!-- Eyelid animation -->
+    <path d="M 55,100 Q 100,50 145,100" stroke="#2979ff" stroke-width="10" fill="none">
+        <animate attributeName="d" values="M 55,100 Q 100,50 145,100;
+                     M 55,100 Q 100,150 145,100;
+                     M 55,100 Q 100,50 145,100" dur="3s" repeatCount="indefinite" />
+    </path>
+
+    <!-- Text -->
+    <text x="100" y="180" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle"
+        fill="white">BLINK</text>
+</svg>

@@ -1,0 +1,32 @@
+{% extends "main.html" %}
+
+{% block content %}
+<div class="md-content">
+  <article class="md-content__inner md-typeset">
+    <div class="text-center" style="padding: 3rem 1rem;">
+      <img src="{{ config.site_url }}assets/logo.svg" alt="Blink Logo" width="150" style="margin-bottom: 2rem;">
+      
+      <h1>404 - Page Not Found</h1>
+      
+      <p style="font-size: 1.2rem; margin-bottom: 2rem;">
+        It seems you've blinked and missed this page. It might have been moved, deleted, or never existed in the first place.
+      </p>
+      
+      <a href="{{ config.site_url }}" class="md-button md-button--primary">Go to Homepage</a>
+      <a href="javascript:history.back()" class="md-button">Go Back</a>
+    </div>
+  </article>
+</div>
+
+<style>
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  
+  img[alt="Blink Logo"] {
+    animation: pulse 2s infinite;
+  }
+</style>
+{% endblock %} 

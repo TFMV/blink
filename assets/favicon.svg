@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background circle -->
+    <circle cx="16" cy="16" r="15" fill="#2979ff" />
+
+    <!-- Eye shape -->
+    <ellipse cx="16" cy="16" rx="7" ry="10" fill="white" />
+
+    <!-- Pupil -->
+    <circle cx="16" cy="16" r="4" fill="#263238" />
+
+    <!-- Highlight -->
+    <circle cx="14" cy="14" r="1.5" fill="white" />
+</svg>
