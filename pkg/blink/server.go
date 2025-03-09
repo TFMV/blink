@@ -75,7 +75,7 @@ func RemoveOldEvents(events *TimeEventMap, maxAge time.Duration) {
 // 2. Implements event debouncing to reduce duplicate events
 // 3. Uses a separate goroutine for event processing to avoid blocking the main thread
 // 4. Implements periodic cleanup of old events to prevent memory leaks
-func CollectFileChangeEvents(watcher *RecursiveWatcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration) {
+func CollectFileChangeEvents(watcher *RecursiveWatcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration, filter *EventFilter, webhookManager *WebhookManager) {
 	// Create a buffered channel for event processing
 	// This allows handling bursts of events without blocking
 	eventChan := make(chan fsnotify.Event, 100)
@@ -85,6 +85,12 @@ func CollectFileChangeEvents(watcher *RecursiveWatcher, mut *sync.Mutex, events 
 		for {
 			select {
 			case ev := <-watcher.Events:
+				// Apply filter if provided
+				if filter != nil && !filter.ShouldInclude(ev) {
+					// Skip this event
+					continue
+				}
+
 				// Send the event to the processing channel
 				// Use non-blocking send to avoid getting stuck if the channel is full
 				select {
@@ -95,6 +101,11 @@ func CollectFileChangeEvents(watcher *RecursiveWatcher, mut *sync.Mutex, events 
 					if LogError != nil {
 						LogError(errors.New("event channel is full, dropping event"))
 					}
+				}
+
+				// Send to webhook manager if provided
+				if webhookManager != nil {
+					webhookManager.HandleEvent(ev)
 				}
 			case err := <-watcher.Errors:
 				if LogError != nil {
@@ -246,7 +257,7 @@ func Flush(w http.ResponseWriter) bool {
 // addr is the host address ([host][:port])
 // The filesystem events are gathered independently of that.
 // Allowed can be "*" or a hostname and sets a header in the SSE stream.
-func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration time.Duration) {
+func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration time.Duration, options ...Option) {
 
 	if !Exists(path) {
 		if FatalExit != nil {
@@ -265,9 +276,33 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 	var mut sync.Mutex
 	events := make(TimeEventMap)
 
+	// Create and configure options
+	opts := &Options{}
+	for _, option := range options {
+		option(opts)
+	}
+
+	// Create webhook manager if webhook URL is provided
+	var webhookManager *WebhookManager
+	if opts.WebhookURL != "" {
+		webhookConfig := WebhookConfig{
+			URL:              opts.WebhookURL,
+			Method:           opts.WebhookMethod,
+			Headers:          opts.WebhookHeaders,
+			Timeout:          opts.WebhookTimeout,
+			DebounceDuration: opts.WebhookDebounceDuration,
+			MaxRetries:       opts.WebhookMaxRetries,
+			Filter:           opts.Filter,
+		}
+		webhookManager = NewWebhookManager(webhookConfig)
+		if LogInfo != nil {
+			LogInfo(fmt.Sprintf("Webhook configured for URL: %s", opts.WebhookURL))
+		}
+	}
+
 	// Collect the events for the last n seconds, repeatedly
 	// Runs in the background
-	CollectFileChangeEvents(rw, &mut, events, refreshDuration)
+	CollectFileChangeEvents(rw, &mut, events, refreshDuration, opts.Filter, webhookManager)
 
 	// Serve events
 	go func() {
@@ -285,4 +320,99 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 			}
 		}
 	}()
+}
+
+// Options contains all options for the EventServer
+type Options struct {
+	// Filter to apply to events
+	Filter *EventFilter
+	// Webhook URL to send events to
+	WebhookURL string
+	// HTTP method to use for webhooks
+	WebhookMethod string
+	// Headers to include in webhook requests
+	WebhookHeaders map[string]string
+	// Timeout for webhook requests
+	WebhookTimeout time.Duration
+	// Debounce duration for webhooks
+	WebhookDebounceDuration time.Duration
+	// Maximum number of retries for webhook requests
+	WebhookMaxRetries int
+}
+
+// Option is a function that configures Options
+type Option func(*Options)
+
+// WithFilter creates an Option that sets the event filter
+func WithFilter(filter *EventFilter) Option {
+	return func(o *Options) {
+		o.Filter = filter
+	}
+}
+
+// WithWebhook creates an Option that configures a webhook
+func WithWebhook(url string, method string) Option {
+	return func(o *Options) {
+		o.WebhookURL = url
+		o.WebhookMethod = method
+	}
+}
+
+// WithWebhookHeaders creates an Option that sets webhook headers
+func WithWebhookHeaders(headers map[string]string) Option {
+	return func(o *Options) {
+		o.WebhookHeaders = headers
+	}
+}
+
+// WithWebhookTimeout creates an Option that sets the webhook timeout
+func WithWebhookTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		o.WebhookTimeout = timeout
+	}
+}
+
+// WithWebhookDebounce creates an Option that sets the webhook debounce duration
+func WithWebhookDebounce(duration time.Duration) Option {
+	return func(o *Options) {
+		o.WebhookDebounceDuration = duration
+	}
+}
+
+// WithWebhookRetries creates an Option that sets the maximum number of webhook retries
+func WithWebhookRetries(maxRetries int) Option {
+	return func(o *Options) {
+		o.WebhookMaxRetries = maxRetries
+	}
+}
+
+// FilterOption is a function that configures an EventFilter
+type FilterOption func(*EventFilter)
+
+// WithIncludePatterns creates a FilterOption that sets the include patterns
+func WithIncludePatterns(patterns string) FilterOption {
+	return func(f *EventFilter) {
+		f.SetIncludePatterns(patterns)
+	}
+}
+
+// WithExcludePatterns creates a FilterOption that sets the exclude patterns
+func WithExcludePatterns(patterns string) FilterOption {
+	return func(f *EventFilter) {
+		f.SetExcludePatterns(patterns)
+	}
+}
+
+// WithIncludeEvents creates a FilterOption that sets the include event types
+func WithIncludeEvents(events string) FilterOption {
+	return func(f *EventFilter) {
+		f.SetIncludeEvents(events)
+	}
+}
+
+// WithIgnoreEvents creates a FilterOption that sets the ignore event types
+func WithIgnoreEvents(events string) FilterOption {
+	return func(f *EventFilter) {
+		f.SetIgnoreEvents(events)
+	}
 }
