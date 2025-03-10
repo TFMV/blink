@@ -12,18 +12,47 @@ Blink is a high-performance file system watcher that monitors directories for ch
 
 ## Features
 
-- Recursive directory watching with symbolic link support
-- Server-sent events (SSE) for real-time notifications
-- Configurable refresh duration
-- Cross-origin resource sharing (CORS) support
-- Verbose logging option
-- High-performance design with:
-  - Parallel directory scanning
-  - Event debouncing to reduce duplicate events
-  - Worker pools for handling large directory structures
+### Core Capabilities
+
+- 🔍 **File System Monitoring**
+  - Recursive directory watching
+  - Symbolic link support
+  - Real-time change detection
+
+- 📡 **Event Delivery**
+  - Server-sent events (SSE) for real-time notifications
+  - Configurable refresh duration
+  - Cross-origin resource sharing (CORS) support
+
+### Performance Optimizations
+
+- ⚡ **High-Performance Design**
+  - Parallel directory scanning with worker pools
   - Non-blocking channel operations
   - Efficient memory usage with periodic cleanup
-- Robust CLI with configuration management
+  - Event debouncing to reduce duplicate events
+
+### Integration & Configuration
+
+- 🔧 **Flexible Configuration**
+  - Command-line interface
+  - Environment variables
+  - YAML configuration files
+  - Dynamic configuration management
+
+- 🔌 **Integration Options**
+  - Webhook support with retry logic
+  - Custom HTTP headers
+  - Configurable timeouts and debouncing
+  - Filterable events and patterns
+
+### Monitoring & Debugging
+
+- 📊 **Observability**
+  - Prometheus metrics integration
+  - Health check endpoints
+  - Verbose logging option
+  - Kubernetes-ready deployment
 
 ## Installation
 
@@ -51,24 +80,26 @@ blink -path /path/to/watch -event-addr :12345 -event-path /events
 
 ### Command-line Options
 
-- `-path`: Directory path to watch for changes (must be a valid directory) (default: ".")
-- `-allowed-origin`: Value for Access-Control-Allow-Origin header (default: "*")
-- `-event-addr`: Address to serve events on (\[host\][:port]) (default: ":12345")
-- `-event-path`: URL path for the event stream (default: "/events")
-- `-refresh`: Refresh duration for events (default: 100ms)
-- `-verbose`: Enable verbose logging (default: false)
-- `-max-procs`: Maximum number of CPUs to use (default: all available)
-- `-include`: Include patterns for files (e.g., "*.js,*.css,*.html")
-- `-exclude`: Exclude patterns for files (e.g., "node_modules,*.tmp")
-- `-events`: Include event types (e.g., "write,create")
-- `-ignore`: Ignore event types (e.g., "chmod")
-- `-webhook-url`: URL for the webhook
-- `-webhook-method`: HTTP method for the webhook (default: "POST")
-- `-webhook-headers`: Headers for the webhook (format: "key1:value1,key2:value2")
-- `-webhook-timeout`: Timeout for the webhook (default: 5s)
-- `-webhook-debounce-duration`: Debounce duration for the webhook (default: 0s)
-- `-webhook-max-retries`: Maximum number of retries for the webhook (default: 3)
-- `-help`: Show help
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-path` | Directory path to watch for changes (must be a valid directory) | `"."` |
+| `-allowed-origin` | Value for Access-Control-Allow-Origin header | `"*"` |
+| `-event-addr` | Address to serve events on ([host][:port]) | `":12345"` |
+| `-event-path` | URL path for the event stream | `"/events"` |
+| `-refresh` | Refresh duration for events | `100ms` |
+| `-verbose` | Enable verbose logging | `false` |
+| `-max-procs` | Maximum number of CPUs to use | all available |
+| `-include` | Include patterns for files (e.g., "*.js,*.css,*.html") | none |
+| `-exclude` | Exclude patterns for files (e.g., "node_modules,*.tmp") | none |
+| `-events` | Include event types (e.g., "write,create") | none |
+| `-ignore` | Ignore event types (e.g., "chmod") | none |
+| `-webhook-url` | URL for the webhook | none |
+| `-webhook-method` | HTTP method for the webhook | `"POST"` |
+| `-webhook-headers` | Headers for the webhook (format: "key1:value1,key2:value2") | none |
+| `-webhook-timeout` | Timeout for the webhook | `5s` |
+| `-webhook-debounce-duration` | Debounce duration for the webhook | `0s` |
+| `-webhook-max-retries` | Maximum number of retries for the webhook | `3` |
+| `-help` | Show help | n/a |
 
 ### Event Filtering
 
@@ -154,4 +185,4 @@ blink config get path
 blink config set path /path/to/watch
 ```
 
-Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config`
+Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config` flag.
