@@ -187,7 +187,10 @@ func WriteEvent(w http.ResponseWriter, id *uint64, message string, flush bool) {
 		buf.WriteString(fmt.Sprintf("data: %s\n", msg))
 	}
 	buf.WriteString("\n")
-	io.Copy(w, &buf)
+	_, err := io.Copy(w, &buf)
+	if err != nil {
+		log.Printf("Error writing event: %v", err)
+	}
 	if flush {
 		Flush(w)
 	}

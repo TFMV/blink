@@ -3,7 +3,6 @@ package blink
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -98,7 +97,7 @@ func TestEventServer(t *testing.T) {
 	}
 
 	// Create a temporary directory for testing
-	tempDir, err := ioutil.TempDir("", "blink-server-test-")
+	tempDir, err := os.MkdirTemp("", "blink-server-test-")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -120,7 +119,7 @@ func TestEventServer(t *testing.T) {
 
 	// Create a file in the watched directory to trigger an event
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := ioutil.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 

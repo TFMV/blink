@@ -80,7 +80,7 @@ Please see the [Kubernetes deployment guide](kubernetes/README.md) for detailed 
 
 ## Benchmarks
 
-Blink is optimized for high-performance. Here are some benchmark results from our test suite:
+Blink is optimized for high-performance. Here are some benchmark results from our test suite. For detailed performance metrics, memory analysis, and race condition testing, see our [comprehensive benchmarks report](BENCHMARKS.md).
 
 ### Filter Performance
 

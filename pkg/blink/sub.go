@@ -43,7 +43,7 @@ func Subfolders(path string) (paths []string) {
 	var mut sync.Mutex
 
 	// Use symwalk to follow symbolic links safely
-	symwalk.Walk(path, func(newPath string, info os.FileInfo, err error) error {
+	err := symwalk.Walk(path, func(newPath string, info os.FileInfo, err error) error {
 		// Skip errors - this allows the walk to continue even if some directories are inaccessible
 		if err != nil {
 			if LogError != nil {
@@ -75,6 +75,12 @@ func Subfolders(path string) (paths []string) {
 
 		return nil
 	})
+
+	if err != nil {
+		if LogError != nil {
+			LogError(err)
+		}
+	}
 
 	return paths
 }

@@ -107,12 +107,35 @@ func BenchmarkWatcher(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	// Run the benchmark in batches to avoid "too many open files" error
+	batchSize := 10
+	for i := 0; i < b.N; i += batchSize {
+		count := batchSize
+		if i+batchSize > b.N {
+			count = b.N - i
+		}
+
+		// Create a single watcher for this batch
 		watcher, err := NewWatcher(config)
 		if err != nil {
 			b.Fatalf("Failed to create watcher: %v", err)
 		}
-		watcher.Start()
+
+		// Start and stop the watcher multiple times
+		for j := 0; j < count; j++ {
+			if err := watcher.Start(); err != nil {
+				b.Fatalf("Failed to start watcher: %v", err)
+			}
+
+			// Let it run briefly
+			time.Sleep(time.Millisecond)
+
+			// Signal the watch loop to exit
+			watcher.closeChan <- true
+		}
+
+		// Properly close the watcher after the batch
 		watcher.Close()
 	}
 }
@@ -247,7 +270,9 @@ func BenchmarkCompareWatchers(b *testing.B) {
 			if err != nil {
 				b.Fatalf("Failed to create watcher: %v", err)
 			}
-			watcher.Start()
+			if err := watcher.Start(); err != nil {
+				b.Fatalf("Failed to start watcher: %v", err)
+			}
 			watcher.Close()
 		}
 	})

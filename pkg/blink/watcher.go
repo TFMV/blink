@@ -114,9 +114,23 @@ func (w *Watcher) Start() error {
 	return nil
 }
 
-// Close stops the watcher
+// Close stops the watcher and cleans up resources
 func (w *Watcher) Close() error {
-	w.closeChan <- true
+	// Signal the watch loop to exit
+	close(w.closeChan)
+
+	// Clear any pending events
+	w.handlerLock.Lock()
+	w.events = nil
+	w.handlerLock.Unlock()
+
+	// Clear directory maps
+	w.dirLock.Lock()
+	w.directories = make(map[string]bool)
+	w.watches = make(map[string]bool)
+	w.dirLock.Unlock()
+
+	// Close the underlying fsnotify watcher
 	return w.watcher.Close()
 }
 
@@ -139,21 +153,32 @@ func (w *Watcher) watchLoop() {
 			newWatchPaths := w.addWatches()
 			w.scheduleCreateEvents(newWatchPaths)
 
-		case event := <-w.watcher.Events:
+		case event, ok := <-w.watcher.Events:
+			if !ok {
+				// Channel closed, exit loop
+				return
+			}
 			// Handle file system event
 			if err := w.handleEvent(event); err != nil {
 				w.errorChan <- err
 			}
 
-		case err := <-w.watcher.Errors:
+		case err, ok := <-w.watcher.Errors:
+			if !ok {
+				// Channel closed, exit loop
+				return
+			}
 			// Forward errors
 			if err != nil {
 				w.errorChan <- err
 			}
 
-		case <-w.closeChan:
+		case _, ok := <-w.closeChan:
 			// Exit loop when closed
-			return
+			if !ok {
+				// Channel closed, clean up and exit
+				return
+			}
 		}
 	}
 }
@@ -262,7 +287,7 @@ func (w *Watcher) addWatches() []string {
 	// Process each directory
 	for dir := range w.directories {
 		// Walk the directory
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil // Skip files we can't access
 			}
@@ -292,6 +317,11 @@ func (w *Watcher) addWatches() []string {
 
 			return nil
 		})
+
+		if err != nil {
+			// Log the error but continue with other directories
+			w.errorChan <- fmt.Errorf("error walking directory %s: %v", dir, err)
+		}
 	}
 
 	return newWatchPaths
