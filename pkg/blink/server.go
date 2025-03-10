@@ -2,6 +2,7 @@ package blink
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -122,16 +123,6 @@ func CollectFileChangeEvents(watcher *Watcher, mut *sync.Mutex, events TimeEvent
 	}()
 }
 
-// GenFileChangeEvents creates an SSE event whenever a file in the server directory changes.
-//
-// Uses the following HTTP headers:
-//
-//	Content-Type: text/event-stream;charset=utf-8
-//	Cache-Control: no-cache
-//	Connection: keep-alive
-//	Access-Control-Allow-Origin: (custom value)
-//
-// The "Access-Control-Allow-Origin" header uses the value that is passed in the "allowed" argument.
 func GenFileChangeEvents(events TimeEventMap, mut *sync.Mutex, maxAge time.Duration, allowed string) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream;charset=utf-8")
@@ -206,7 +197,7 @@ func Flush(w http.ResponseWriter) bool {
 	return ok
 }
 
-// EventServer starts a server that serves events over SSE
+// EventServer starts a server that serves events over SSE and/or WebSockets
 func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration time.Duration, options ...Option) {
 	// Check if the path exists
 	if !Exists(path) {
@@ -287,24 +278,80 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 		})
 	}
 
-	// Create a map to store events
-	events := make(TimeEventMap)
-	var mutex sync.Mutex
+	// Create a context for the streamers
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Collect events from the watcher
-	CollectFileChangeEvents(watcher, &mutex, events, refreshDuration, opts.Filter, webhookManager)
+	// Create the appropriate streamer based on the stream method
+	var streamer EventStreamer
 
-	// Create an HTTP server
-	http.HandleFunc(eventPath, GenFileChangeEvents(events, &mutex, refreshDuration, allowed))
-
-	// Start the server
-	if LogInfo != nil {
-		LogInfo(fmt.Sprintf("Listening on %s, serving events at %s", eventAddr, eventPath))
+	streamerOpts := StreamerOptions{
+		Address:         eventAddr,
+		Path:            eventPath,
+		AllowedOrigin:   allowed,
+		RefreshDuration: refreshDuration,
+		Filter:          opts.Filter,
 	}
 
-	if err := http.ListenAndServe(eventAddr, nil); err != nil {
+	switch opts.StreamMethod {
+	case StreamMethodSSE:
+		streamer = NewSSEStreamer(streamerOpts)
+	case StreamMethodWebSocket:
+		streamer = NewWebSocketStreamer(streamerOpts)
+	case StreamMethodBoth:
+		// For WebSocket, use a different path by appending "/ws" to the eventPath
+		wsOpts := streamerOpts
+		wsOpts.Path = eventPath + "/ws"
+
+		sseStreamer := NewSSEStreamer(streamerOpts)
+		wsStreamer := NewWebSocketStreamer(wsOpts)
+
+		streamer = NewMultiStreamer(sseStreamer, wsStreamer)
+	default:
+		// Default to SSE for backward compatibility
+		streamer = NewSSEStreamer(streamerOpts)
+	}
+
+	// Start the streamer
+	if err := streamer.Start(ctx); err != nil {
 		FatalExit(err)
 	}
+
+	// Collect events from the watcher and send them to the streamer
+	go func() {
+		for {
+			select {
+			case events := <-watcher.Events():
+				for _, event := range events {
+					// Send the event to the streamer
+					if err := streamer.Send(event); err != nil && LogError != nil {
+						LogError(err)
+					}
+
+					// Send webhook if configured
+					if webhookManager != nil {
+						webhookManager.HandleEvent(event)
+					}
+				}
+
+			case err := <-watcher.Errors():
+				if err != nil && LogError != nil {
+					LogError(err)
+				}
+
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Start the watcher
+	if err := watcher.Start(); err != nil {
+		FatalExit(err)
+	}
+
+	// Block until context is canceled
+	<-ctx.Done()
 }
 
 // eventOpToString converts an fsnotify.Op to a string
@@ -341,6 +388,8 @@ type Options struct {
 	WebhookDebounceDuration time.Duration
 	// Maximum number of retries for webhook requests
 	WebhookMaxRetries int
+	// Stream method to use
+	StreamMethod StreamMethod
 }
 
 // Option is a function that configures Options
@@ -353,15 +402,19 @@ func WithFilter(filter *EventFilter) Option {
 	}
 }
 
-// WithWebhook creates an Option that configures a webhook
-func WithWebhook(url string, method string) Option {
+// WithWebhook creates an Option that sets the webhook URL and method
+func WithWebhook(url, method string, headers map[string]string, timeout, debounceDuration time.Duration, maxRetries int) Option {
 	return func(o *Options) {
 		o.WebhookURL = url
 		o.WebhookMethod = method
+		o.WebhookHeaders = headers
+		o.WebhookTimeout = timeout
+		o.WebhookDebounceDuration = debounceDuration
+		o.WebhookMaxRetries = maxRetries
 	}
 }
 
-// WithWebhookHeaders creates an Option that sets webhook headers
+// WithWebhookHeaders creates an Option that sets the webhook headers
 func WithWebhookHeaders(headers map[string]string) Option {
 	return func(o *Options) {
 		o.WebhookHeaders = headers
@@ -382,10 +435,17 @@ func WithWebhookDebounce(duration time.Duration) Option {
 	}
 }
 
-// WithWebhookRetries creates an Option that sets the maximum number of webhook retries
-func WithWebhookRetries(maxRetries int) Option {
+// WithWebhookRetries creates an Option that sets the webhook max retries
+func WithWebhookRetries(retries int) Option {
 	return func(o *Options) {
-		o.WebhookMaxRetries = maxRetries
+		o.WebhookMaxRetries = retries
+	}
+}
+
+// WithStreamMethod creates an Option that sets the stream method
+func WithStreamMethod(method StreamMethod) Option {
+	return func(o *Options) {
+		o.StreamMethod = method
 	}
 }
 
