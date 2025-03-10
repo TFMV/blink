@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blink WebSocket Client</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .event-log {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        .event {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .event-create {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+        .event-write {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+        .event-remove {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+        .event-rename {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+        }
+        .event-chmod {
+            background-color: #e2e3e5;
+            border-left: 4px solid #6c757d;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 300px;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .connected {
+            color: #28a745;
+        }
+        .disconnected {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>Blink WebSocket Client</h1>
+    
+    <div class="controls">
+        <input type="text" id="serverUrl" value="ws://localhost:12345/events/ws" placeholder="WebSocket URL">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="clearBtn">Clear Events</button>
+    </div>
+    
+    <div class="status disconnected" id="status">Disconnected</div>
+    
+    <div class="event-log" id="eventLog"></div>
+    
+    <script>
+        let socket = null;
+        const serverUrlInput = document.getElementById('serverUrl');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusEl = document.getElementById('status');
+        const eventLogEl = document.getElementById('eventLog');
+        
+        // Connect to WebSocket server
+        connectBtn.addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+            }
+            
+            const serverUrl = serverUrlInput.value;
+            try {
+                socket = new WebSocket(serverUrl);
+                
+                socket.onopen = () => {
+                    statusEl.textContent = 'Connected';
+                    statusEl.classList.remove('disconnected');
+                    statusEl.classList.add('connected');
+                    logEvent('System', 'Connected to ' + serverUrl);
+                };
+                
+                socket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        logFileEvent(data);
+                    } catch (e) {
+                        logEvent('Error', 'Failed to parse message: ' + e.message);
+                    }
+                };
+                
+                socket.onclose = () => {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.classList.remove('connected');
+                    statusEl.classList.add('disconnected');
+                    logEvent('System', 'Disconnected from server');
+                    socket = null;
+                };
+                
+                socket.onerror = (error) => {
+                    logEvent('Error', 'WebSocket error');
+                    console.error('WebSocket error:', error);
+                };
+            } catch (e) {
+                logEvent('Error', 'Failed to connect: ' + e.message);
+            }
+        });
+        
+        // Disconnect from WebSocket server
+        disconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+        });
+        
+        // Clear event log
+        clearBtn.addEventListener('click', () => {
+            eventLogEl.innerHTML = '';
+        });
+        
+        // Log a file event
+        function logFileEvent(data) {
+            const timestamp = new Date(data.timestamp).toLocaleTimeString();
+            const path = data.path;
+            const operation = data.operation;
+            
+            const eventEl = document.createElement('div');
+            eventEl.classList.add('event', `event-${operation.toLowerCase()}`);
+            eventEl.innerHTML = `
+                <strong>${timestamp}</strong> - 
+                <span class="operation">${operation}</span>: 
+                <span class="path">${path}</span>
+            `;
+            
+            eventLogEl.appendChild(eventEl);
+            eventLogEl.scrollTop = eventLogEl.scrollHeight;
+        }
+        
+        // Log a system event
+        function logEvent(type, message) {
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const eventEl = document.createElement('div');
+            eventEl.classList.add('event');
+            eventEl.innerHTML = `
+                <strong>${timestamp}</strong> - 
+                <span class="type">${type}</span>: 
+                <span class="message">${message}</span>
+            `;
+            
+            eventLogEl.appendChild(eventEl);
+            eventLogEl.scrollTop = eventLogEl.scrollHeight;
+        }
+    </script>
+</body>
+</html> 

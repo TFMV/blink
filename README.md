@@ -8,7 +8,7 @@
 
 # Blink
 
-Blink is a high-performance file system watcher that monitors directories for changes and provides events through a server-sent events (SSE) stream.
+Blink is a high-performance file system watcher that monitors directories for changes and provides events through real-time streaming protocols.
 
 ## Features
 
@@ -20,9 +20,11 @@ Blink is a high-performance file system watcher that monitors directories for ch
   - Real-time change detection
 
 - 📡 **Event Delivery**
+  - WebSocket support for bidirectional communication
   - Server-sent events (SSE) for real-time notifications
-  - Configurable refresh duration
+  - Configurable streaming method (WebSocket, SSE, or both)
   - Cross-origin resource sharing (CORS) support
+  - JSON-formatted event data
 
 ### Performance Optimizations
 
@@ -107,6 +109,7 @@ blink -path /path/to/watch -event-addr :12345 -event-path /events
 | `-allowed-origin` | Value for Access-Control-Allow-Origin header | `"*"` |
 | `-event-addr` | Address to serve events on ([host][:port]) | `":12345"` |
 | `-event-path` | URL path for the event stream | `"/events"` |
+| `-stream-method` | Method for streaming events (sse, websocket, both) | `"sse"` |
 | `-refresh` | Refresh duration for events | `100ms` |
 | `-verbose` | Enable verbose logging | `false` |
 | `-max-procs` | Maximum number of CPUs to use | all available |
@@ -121,6 +124,26 @@ blink -path /path/to/watch -event-addr :12345 -event-path /events
 | `-webhook-debounce-duration` | Debounce duration for the webhook | `0s` |
 | `-webhook-max-retries` | Maximum number of retries for the webhook | `3` |
 | `-help` | Show help | n/a |
+
+### Event Streaming
+
+Blink supports multiple methods for streaming file system events:
+
+```bash
+# Use WebSockets for event streaming
+blink --stream-method websocket
+
+# Use Server-Sent Events (SSE) for event streaming (default)
+blink --stream-method sse
+
+# Use both WebSockets and SSE simultaneously
+blink --stream-method both
+```
+
+When using `--stream-method both`, Blink will serve:
+
+- SSE events at the path specified by `--event-path` (default: `/events`)
+- WebSocket events at the same path with `/ws` appended (default: `/events/ws`)
 
 ### Event Filtering
 
@@ -174,3 +197,12 @@ blink --webhook-debounce-duration 500ms
 # Combine with filters to only send webhooks for specific events
 blink --include "*.js" --events "write" --webhook-url "https://example.com/webhook"
 ```
+
+## Client Examples
+
+Example clients for both WebSocket and SSE are available in the `examples` directory:
+
+- WebSocket client: `examples/websocket-client/index.html`
+- SSE client: `examples/sse-client/index.html`
+
+These examples demonstrate how to connect to Blink and receive real-time file system events.

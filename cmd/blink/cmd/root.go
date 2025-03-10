@@ -34,6 +34,8 @@ var (
 	webhookTimeout          time.Duration
 	webhookDebounceDuration time.Duration
 	webhookMaxRetries       int
+	// Streaming flags
+	streamMethod string
 
 	// rootCmd represents the base command when called without any subcommands
 	rootCmd = &cobra.Command{
@@ -88,6 +90,7 @@ func init() {
 	rootCmd.Flags().DurationVar(&webhookTimeout, "webhook-timeout", 5*time.Second, "Timeout for the webhook")
 	rootCmd.Flags().DurationVar(&webhookDebounceDuration, "webhook-debounce-duration", 0*time.Second, "Debounce duration for the webhook")
 	rootCmd.Flags().IntVar(&webhookMaxRetries, "webhook-max-retries", 3, "Maximum number of retries for the webhook")
+	rootCmd.Flags().StringVar(&streamMethod, "stream-method", "sse", "Method for streaming events (sse, websocket, both)")
 
 	// Bind flags to viper
 	viper.BindPFlag("path", rootCmd.Flags().Lookup("path"))
@@ -107,6 +110,7 @@ func init() {
 	viper.BindPFlag("webhook-timeout", rootCmd.Flags().Lookup("webhook-timeout"))
 	viper.BindPFlag("webhook-debounce-duration", rootCmd.Flags().Lookup("webhook-debounce-duration"))
 	viper.BindPFlag("webhook-max-retries", rootCmd.Flags().Lookup("webhook-max-retries"))
+	viper.BindPFlag("stream-method", rootCmd.Flags().Lookup("stream-method"))
 
 	// Set default values in viper
 	viper.SetDefault("path", ".")
@@ -126,6 +130,7 @@ func init() {
 	viper.SetDefault("webhook-timeout", 5*time.Second)
 	viper.SetDefault("webhook-debounce-duration", 0*time.Second)
 	viper.SetDefault("webhook-max-retries", 3)
+	viper.SetDefault("stream-method", "sse")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -205,46 +210,46 @@ func runWatcher() error {
 			filter.SetIgnoreEvents(ignoreEvents)
 		}
 
-		// Add filter to options
+		// Add the filter to options
 		options = append(options, blink.WithFilter(filter))
 	}
 
-	// Add webhook if specified
+	// Add webhook options if specified
 	if webhookURL := viper.GetString("webhook-url"); webhookURL != "" {
-		// Add webhook to options
 		options = append(options, blink.WithWebhook(
 			webhookURL,
 			viper.GetString("webhook-method"),
+			parseHeaders(viper.GetString("webhook-headers")),
+			viper.GetDuration("webhook-timeout"),
+			viper.GetDuration("webhook-debounce-duration"),
+			viper.GetInt("webhook-max-retries"),
 		))
-
-		// Parse webhook headers if specified
-		if headersStr := viper.GetString("webhook-headers"); headersStr != "" {
-			headers := parseHeaders(headersStr)
-			options = append(options, blink.WithWebhookHeaders(headers))
-		}
-
-		// Add webhook timeout if specified
-		options = append(options, blink.WithWebhookTimeout(viper.GetDuration("webhook-timeout")))
-
-		// Add webhook debounce duration if specified
-		if debounceDuration := viper.GetDuration("webhook-debounce-duration"); debounceDuration > 0 {
-			options = append(options, blink.WithWebhookDebounce(debounceDuration))
-		}
-
-		// Add webhook max retries if specified
-		options = append(options, blink.WithWebhookRetries(viper.GetInt("webhook-max-retries")))
 	}
 
-	// Print startup information
-	fmt.Printf("Blink File System Watcher\n")
-	fmt.Printf("-------------------------\n")
-	fmt.Printf("Watching directory: %s\n", watchPath)
-	fmt.Printf("Serving events at: http://%s%s\n", viper.GetString("event-addr"), viper.GetString("event-path"))
-	fmt.Printf("Refresh duration: %v\n", viper.GetDuration("refresh"))
-	fmt.Printf("Verbose mode: %v\n", viper.GetBool("verbose"))
-	fmt.Printf("Using %d CPUs\n", viper.GetInt("max-procs"))
+	// Add stream method option
+	streamMethodStr := viper.GetString("stream-method")
+	var streamMethod blink.StreamMethod
+	switch strings.ToLower(streamMethodStr) {
+	case "sse":
+		streamMethod = blink.StreamMethodSSE
+	case "websocket":
+		streamMethod = blink.StreamMethodWebSocket
+	case "both":
+		streamMethod = blink.StreamMethodBoth
+	default:
+		streamMethod = blink.StreamMethodSSE
+	}
+	options = append(options, blink.WithStreamMethod(streamMethod))
 
-	// Print filter information if any filters are specified
+	// Print information about the watcher
+	fmt.Printf("Watching %s\n", watchPath)
+	fmt.Printf("Event server address: %s\n", viper.GetString("event-addr"))
+	fmt.Printf("Event path: %s\n", viper.GetString("event-path"))
+	fmt.Printf("Stream method: %s\n", streamMethodStr)
+	fmt.Printf("Refresh duration: %v\n", viper.GetDuration("refresh"))
+	fmt.Printf("Allowed origin: %s\n", viper.GetString("allowed-origin"))
+
+	// Print filter information if specified
 	if viper.GetString("include") != "" {
 		fmt.Printf("Include patterns: %s\n", viper.GetString("include"))
 	}
