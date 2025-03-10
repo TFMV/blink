@@ -39,6 +39,10 @@ cd blink
 go build -o blink ./cmd/blink
 ```
 
+### Kubernetes Deployment
+
+Please see the [Kubernetes deployment guide](kubernetes/README.md) for detailed instructions on deploying Blink to Kubernetes.
+
 ## Usage
 
 ```bash
@@ -150,122 +154,4 @@ blink config get path
 blink config set path /path/to/watch
 ```
 
-Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config` flag.
-
-## Example
-
-Start watching the current directory:
-
-```bash
-blink
-```
-
-Connect to the event stream:
-
-```javascript
-// In your web application
-const eventSource = new EventSource('http://localhost:12345/events');
-eventSource.onmessage = function(event) {
-  console.log('File changed:', event.data);
-};
-```
-
-## Using as a Library
-
-You can also use Blink as a library in your Go projects:
-
-```go
-import (
-    "time"
-    "github.com/TFMV/blink/pkg/blink"
-)
-
-func main() {
-    // Set verbose mode
-    blink.SetVerbose(true)
-    
-    // Create a filter
-    filter := blink.NewEventFilter()
-    filter.SetIncludePatterns("*.js,*.css,*.html")
-    filter.SetExcludePatterns("node_modules,*.tmp")
-    filter.SetIncludeEvents("write,create")
-    filter.SetIgnoreEvents("chmod")
-    
-    // Start the event server with filters and webhooks
-    blink.EventServer(
-        ".",                  // Directory to watch
-        "*",                  // Allow all origins
-        ":12345",             // Listen on port 12345
-        "/events",            // Event path
-        100*time.Millisecond, // Refresh duration
-        // Options
-        blink.WithFilter(filter),
-        blink.WithWebhook("https://example.com/webhook", "POST"),
-        blink.WithWebhookHeaders(map[string]string{
-            "Authorization": "Bearer token",
-            "Content-Type": "application/json",
-        }),
-        blink.WithWebhookTimeout(10*time.Second),
-        blink.WithWebhookDebounce(500*time.Millisecond),
-        blink.WithWebhookRetries(5),
-    )
-    
-    // Wait for events
-    select {}
-}
-```
-
-## Testing and Benchmarking
-
-Blink includes a comprehensive test suite and benchmarks to ensure reliability and performance.
-
-### Running Tests
-
-```bash
-# Run all tests
-make test
-
-# Run tests without integration tests
-make test-short
-```
-
-The test suite includes:
-
-- Unit tests for core functionality
-- Integration tests for the event server
-- Tests for file system operations
-
-Current test coverage: ~67% of statements in the core package.
-
-### Running Benchmarks
-
-```bash
-# Run benchmarks
-make benchmark
-```
-
-Benchmark results show excellent performance:
-
-- `ShouldIgnoreFile`: ~30.57 ns/op, 0 B/op, 0 allocs/op
-- `RemoveOldEvents`: ~121779 ns/op for 1000 events
-- `Subfolders`: Fast directory scanning with optimized memory usage
-
-### Generating Coverage Reports
-
-```bash
-# Generate test coverage report
-make coverage
-```
-
-This will create a coverage report and open it in your browser.
-
-## Examples
-
-Check the `examples/` directory for usage examples:
-
-- `examples/simple/`: A simple Go program using the Blink library
-- `examples/web/`: A web application that connects to the Blink event stream
-
-## License
-
-See the [LICENSE](LICENSE) file for details.
+Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config`

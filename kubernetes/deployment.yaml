@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blink
+  labels:
+    app: blink
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blink
+  template:
+    metadata:
+      labels:
+        app: blink
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "12345"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: blink
+          image: blink:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 12345
+              name: http
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 12345
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 12345
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: watch-volume
+              mountPath: /watch
+          envFrom:
+            - configMapRef:
+                name: blink-config
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      volumes:
+        - name: watch-volume
+          emptyDir: {}
