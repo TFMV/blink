@@ -25,8 +25,6 @@ type WebhookConfig struct {
 	DebounceDuration time.Duration
 	// Maximum number of retries for failed requests
 	MaxRetries int
-	// Filter to apply to events before sending webhooks
-	Filter *EventFilter
 }
 
 // WebhookManager manages webhooks for file system events
@@ -90,11 +88,6 @@ func NewWebhookManager(config WebhookConfig) *WebhookManager {
 
 // HandleEvent handles a file system event
 func (m *WebhookManager) HandleEvent(event fsnotify.Event) {
-	// Apply filter if provided
-	if m.Config.Filter != nil && !m.Config.Filter.ShouldInclude(event) {
-		return
-	}
-
 	// Send event to channel for processing
 	select {
 	case m.eventChan <- event:

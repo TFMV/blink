@@ -69,104 +69,54 @@ func RemoveOldEvents(events *TimeEventMap, maxAge time.Duration) {
 	}
 }
 
-// CollectFileChangeEvents gathers filesystem events in a way that web handle functions can use.
-// Performance improvements:
-// 1. Uses a buffered channel for event processing to handle bursts of events
-// 2. Implements event debouncing to reduce duplicate events
-// 3. Uses a separate goroutine for event processing to avoid blocking the main thread
-// 4. Implements periodic cleanup of old events to prevent memory leaks
-func CollectFileChangeEvents(watcher *RecursiveWatcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration, filter *EventFilter, webhookManager *WebhookManager) {
-	// Create a buffered channel for event processing
-	// This allows handling bursts of events without blocking
-	eventChan := make(chan fsnotify.Event, 100)
+// CollectFileChangeEvents collects file change events from the watcher
+func CollectFileChangeEvents(watcher *Watcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration, filter *EventFilter, webhookManager *WebhookManager) {
+	// Start the watcher
+	if err := watcher.Start(); err != nil {
+		FatalExit(err)
+	}
 
-	// Start a goroutine to collect events from the watcher
+	// Process events from the watcher
 	go func() {
 		for {
 			select {
-			case ev := <-watcher.Events:
-				// Apply filter if provided
-				if filter != nil && !filter.ShouldInclude(ev) {
-					// Skip this event
-					continue
-				}
+			case eventBatch := <-watcher.Events():
+				// Process each event in the batch
+				for _, fsEvent := range eventBatch {
+					// Convert to our Event type
+					event := Event(fsEvent)
 
-				// Send the event to the processing channel
-				// Use non-blocking send to avoid getting stuck if the channel is full
-				select {
-				case eventChan <- ev:
-					// Successfully sent
-				default:
-					// Channel is full, log but don't block
-					if LogError != nil {
-						LogError(errors.New("event channel is full, dropping event"))
+					// Apply filter if provided
+					if filter != nil && !filter.ShouldProcessEvent(fsEvent) {
+						if LogInfo != nil {
+							LogInfo(fmt.Sprintf("Filtered event: %s", event))
+						}
+						continue
 					}
-				}
 
-				// Send to webhook manager if provided
-				if webhookManager != nil {
-					webhookManager.HandleEvent(ev)
-				}
-			case err := <-watcher.Errors:
-				if LogError != nil {
-					LogError(err)
-				}
-			}
-		}
-	}()
+					// Log the event if verbose logging is enabled
+					if LogInfo != nil {
+						LogInfo(fmt.Sprintf("Event: %s", event))
+					}
 
-	// Start a goroutine to process events
-	go func() {
-		// Create a map to track recent events for debouncing
-		// This helps reduce duplicate events for the same file
-		recentEvents := make(map[string]time.Time)
-
-		// Create a ticker for periodic cleanup of old events
-		cleanupTicker := time.NewTicker(maxAge)
-		defer cleanupTicker.Stop()
-
-		// Debounce duration - only process one event per file within this time window
-		debounceDuration := 50 * time.Millisecond
-
-		for {
-			select {
-			case ev := <-eventChan:
-				// Check if we've seen this file recently (debouncing)
-				now := time.Now()
-				lastSeen, exists := recentEvents[ev.Name]
-
-				// Only process if we haven't seen this file recently
-				if !exists || now.Sub(lastSeen) > debounceDuration {
-					// Update the last seen time
-					recentEvents[ev.Name] = now
-
-					// Process the event
+					// Add the event to the map
+					now := time.Now()
 					mut.Lock()
+					events[now] = event
 					// Remove old events
 					RemoveOldEvents(&events, maxAge)
-					// Save the event with the current time
-					events[now] = Event(ev)
 					mut.Unlock()
 
-					// Log the event if verbose mode is enabled
-					if LogInfo != nil {
-						LogInfo("File event: " + ev.String())
+					// Send webhook if configured
+					if webhookManager != nil {
+						webhookManager.HandleEvent(fsnotify.Event(event))
 					}
 				}
 
-			case <-cleanupTicker.C:
-				// Periodically clean up old events from the debounce map
-				now := time.Now()
-				for file, lastSeen := range recentEvents {
-					if now.Sub(lastSeen) > maxAge {
-						delete(recentEvents, file)
-					}
+			case err := <-watcher.Errors():
+				if err != nil && LogError != nil {
+					LogError(err)
 				}
-
-				// Also clean up the events map
-				mut.Lock()
-				RemoveOldEvents(&events, maxAge)
-				mut.Unlock()
 			}
 		}
 	}()
@@ -253,73 +203,123 @@ func Flush(w http.ResponseWriter) bool {
 	return ok
 }
 
-// EventServer serves events on a dedicated port.
-// addr is the host address ([host][:port])
-// The filesystem events are gathered independently of that.
-// Allowed can be "*" or a hostname and sets a header in the SSE stream.
+// EventServer starts a server that serves events over SSE
 func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration time.Duration, options ...Option) {
-
+	// Check if the path exists
 	if !Exists(path) {
-		if FatalExit != nil {
-			FatalExit(errors.New(path + " does not exist, can't watch"))
-		}
+		FatalExit(errors.New("path does not exist: " + path))
 	}
 
-	// Create a new filesystem watcher
-	rw, err := NewRecursiveWatcher(path)
-	if err != nil {
-		if FatalExit != nil {
-			FatalExit(err)
-		}
-	}
-
-	var mut sync.Mutex
-	events := make(TimeEventMap)
-
-	// Create and configure options
+	// Parse options
 	opts := &Options{}
 	for _, option := range options {
 		option(opts)
 	}
 
-	// Create webhook manager if webhook URL is provided
+	// Create a new watcher
+	config := WatcherConfig{
+		RootPath:        path,
+		Recursive:       true,
+		HandlerDelay:    100 * time.Millisecond,
+		PollInterval:    4 * time.Second,
+		IncludePatterns: nil,
+		ExcludePatterns: nil,
+		IncludeEvents:   nil,
+		IgnoreEvents:    nil,
+	}
+
+	// Apply filter options if provided
+	if opts.Filter != nil {
+		// Convert filter patterns to string arrays
+		if len(opts.Filter.includePatterns) > 0 {
+			config.IncludePatterns = make([]string, len(opts.Filter.includePatterns))
+			for i, pattern := range opts.Filter.includePatterns {
+				// Use pattern as string directly since glob.Glob doesn't have String() method
+				config.IncludePatterns[i] = fmt.Sprintf("%v", pattern)
+			}
+		}
+
+		if len(opts.Filter.excludePatterns) > 0 {
+			config.ExcludePatterns = make([]string, len(opts.Filter.excludePatterns))
+			for i, pattern := range opts.Filter.excludePatterns {
+				// Use pattern as string directly since glob.Glob doesn't have String() method
+				config.ExcludePatterns[i] = fmt.Sprintf("%v", pattern)
+			}
+		}
+
+		// Convert event types to string arrays
+		if len(opts.Filter.includeEvents) > 0 {
+			events := make([]string, 0, len(opts.Filter.includeEvents))
+			for op := range opts.Filter.includeEvents {
+				events = append(events, eventOpToString(op))
+			}
+			config.IncludeEvents = events
+		}
+
+		if len(opts.Filter.ignoreEvents) > 0 {
+			events := make([]string, 0, len(opts.Filter.ignoreEvents))
+			for op := range opts.Filter.ignoreEvents {
+				events = append(events, eventOpToString(op))
+			}
+			config.IgnoreEvents = events
+		}
+	}
+
+	watcher, err := NewWatcher(config)
+	if err != nil {
+		FatalExit(err)
+	}
+	defer watcher.Close()
+
+	// Create a webhook manager if configured
 	var webhookManager *WebhookManager
 	if opts.WebhookURL != "" {
-		webhookConfig := WebhookConfig{
+		webhookManager = NewWebhookManager(WebhookConfig{
 			URL:              opts.WebhookURL,
 			Method:           opts.WebhookMethod,
 			Headers:          opts.WebhookHeaders,
 			Timeout:          opts.WebhookTimeout,
 			DebounceDuration: opts.WebhookDebounceDuration,
 			MaxRetries:       opts.WebhookMaxRetries,
-			Filter:           opts.Filter,
-		}
-		webhookManager = NewWebhookManager(webhookConfig)
-		if LogInfo != nil {
-			LogInfo(fmt.Sprintf("Webhook configured for URL: %s", opts.WebhookURL))
-		}
+		})
 	}
 
-	// Collect the events for the last n seconds, repeatedly
-	// Runs in the background
-	CollectFileChangeEvents(rw, &mut, events, refreshDuration, opts.Filter, webhookManager)
+	// Create a map to store events
+	events := make(TimeEventMap)
+	var mutex sync.Mutex
 
-	// Serve events
-	go func() {
-		eventMux := http.NewServeMux()
-		// Fire off events whenever a file in the server directory changes
-		eventMux.HandleFunc(eventPath, GenFileChangeEvents(events, &mut, refreshDuration, allowed))
-		eventServer := &http.Server{
-			Addr:    eventAddr,
-			Handler: eventMux,
-		}
-		if err := eventServer.ListenAndServe(); err != nil {
-			// If we can't serve HTTP on this port, give up
-			if FatalExit != nil {
-				FatalExit(err)
-			}
-		}
-	}()
+	// Collect events from the watcher
+	CollectFileChangeEvents(watcher, &mutex, events, refreshDuration, opts.Filter, webhookManager)
+
+	// Create an HTTP server
+	http.HandleFunc(eventPath, GenFileChangeEvents(events, &mutex, refreshDuration, allowed))
+
+	// Start the server
+	if LogInfo != nil {
+		LogInfo(fmt.Sprintf("Listening on %s, serving events at %s", eventAddr, eventPath))
+	}
+
+	if err := http.ListenAndServe(eventAddr, nil); err != nil {
+		FatalExit(err)
+	}
+}
+
+// eventOpToString converts an fsnotify.Op to a string
+func eventOpToString(op fsnotify.Op) string {
+	switch op {
+	case fsnotify.Create:
+		return "create"
+	case fsnotify.Write:
+		return "write"
+	case fsnotify.Remove:
+		return "remove"
+	case fsnotify.Rename:
+		return "rename"
+	case fsnotify.Chmod:
+		return "chmod"
+	default:
+		return ""
+	}
 }
 
 // Options contains all options for the EventServer

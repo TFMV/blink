@@ -31,6 +31,9 @@ Blink is a high-performance file system watcher that monitors directories for ch
   - Non-blocking channel operations
   - Efficient memory usage with periodic cleanup
   - Event debouncing to reduce duplicate events
+  - **Watcher**: Advanced file system monitoring with batched events
+  - **Smart Event Handling**: Separate processing for file and directory events
+  - **Configurable Batching**: Adjustable delay for grouping related events
 
 ### Integration & Configuration
 
@@ -39,12 +42,15 @@ Blink is a high-performance file system watcher that monitors directories for ch
   - Environment variables
   - YAML configuration files
   - Dynamic configuration management
+  - **Polling Support**: Periodic scanning for new files
+  - **Customizable Delays**: Fine-tune event batching for your workflow
 
 - 🔌 **Integration Options**
   - Webhook support with retry logic
   - Custom HTTP headers
   - Configurable timeouts and debouncing
   - Filterable events and patterns
+  - **Improved Pattern Matching**: Better file filtering with glob patterns
 
 ### Monitoring & Debugging
 
@@ -71,6 +77,21 @@ go build -o blink ./cmd/blink
 ### Kubernetes Deployment
 
 Please see the [Kubernetes deployment guide](kubernetes/README.md) for detailed instructions on deploying Blink to Kubernetes.
+
+## Benchmarks
+
+Blink is optimized for high-performance. Here are some benchmark results from our test suite:
+
+### Filter Performance
+
+| Scenario | Operations/sec | Time/op | Memory/op | Allocations/op |
+|----------|---------------|---------|-----------|----------------|
+| No Filters | 337,099,838 | 3.51 ns/op | 0 B/op | 0 allocs/op |
+| Include Patterns | 18,537,398 | 65.64 ns/op | 0 B/op | 0 allocs/op |
+| Exclude Patterns | 5,711,019 | 212.4 ns/op | 0 B/op | 0 allocs/op |
+| Include Events | 5,038,678 | 242.2 ns/op | 0 B/op | 0 allocs/op |
+| Ignore Events | 4,297,494 | 273.1 ns/op | 0 B/op | 0 allocs/op |
+| All Filters | 4,412,713 | 276.1 ns/op | 0 B/op | 0 allocs/op |
 
 ## Usage
 
@@ -153,36 +174,3 @@ blink --webhook-debounce-duration 500ms
 # Combine with filters to only send webhooks for specific events
 blink --include "*.js" --events "write" --webhook-url "https://example.com/webhook"
 ```
-
-Webhook payload format:
-
-```json
-{
-  "path": "/path/to/changed/file.js",
-  "event_type": "write",
-  "time": "2023-03-08T12:34:56.789Z"
-}
-```
-
-### Configuration Management
-
-Blink supports configuration through:
-
-1. Command-line flags
-2. Environment variables
-3. Configuration file (YAML)
-
-You can manage configuration using the `config` subcommand:
-
-```bash
-# List all configuration values
-blink config list
-
-# Get a specific configuration value
-blink config get path
-
-# Set a configuration value
-blink config set path /path/to/watch
-```
-
-Configuration is stored in `$HOME/.blink.yaml` by default, but you can specify a different file with the `--config` flag.
