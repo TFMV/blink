@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blink-config
+data:
+  WATCH_PATH: "/watch"
+  EVENT_ADDR: ":12345"
+  INCLUDE_PATTERNS: "*.js,*.css,*.html"
+  EXCLUDE_PATTERNS: "node_modules,*.tmp"
+  INCLUDE_EVENTS: "write,create"
+  IGNORE_EVENTS: "chmod"
