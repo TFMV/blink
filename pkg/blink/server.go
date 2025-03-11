@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -323,6 +324,37 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 			select {
 			case events := <-watcher.Events():
 				for _, event := range events {
+					// Print the event to the console
+					if opts.ShowEvents {
+						// Format the event for display
+						var eventType string
+						switch event.Op {
+						case fsnotify.Create:
+							eventType = "CREATE"
+						case fsnotify.Write:
+							eventType = "WRITE"
+						case fsnotify.Remove:
+							eventType = "REMOVE"
+						case fsnotify.Rename:
+							eventType = "RENAME"
+						case fsnotify.Chmod:
+							eventType = "CHMOD"
+						default:
+							eventType = "UNKNOWN"
+						}
+
+						// Get relative path if possible
+						relPath := event.Name
+						if absPath, err := filepath.Abs(path); err == nil {
+							if rel, err := filepath.Rel(absPath, event.Name); err == nil {
+								relPath = rel
+							}
+						}
+
+						// Print the event
+						fmt.Printf("[%s] %s: %s\n", time.Now().Format("15:04:05"), eventType, relPath)
+					}
+
 					// Send the event to the streamer
 					if err := streamer.Send(event); err != nil && LogError != nil {
 						LogError(err)
@@ -390,6 +422,8 @@ type Options struct {
 	WebhookMaxRetries int
 	// Stream method to use
 	StreamMethod StreamMethod
+	// Show events in the console
+	ShowEvents bool
 }
 
 // Option is a function that configures Options
@@ -446,6 +480,13 @@ func WithWebhookRetries(retries int) Option {
 func WithStreamMethod(method StreamMethod) Option {
 	return func(o *Options) {
 		o.StreamMethod = method
+	}
+}
+
+// WithShowEvents creates an Option that sets whether to show events in the console
+func WithShowEvents(show bool) Option {
+	return func(o *Options) {
+		o.ShowEvents = show
 	}
 }
 
