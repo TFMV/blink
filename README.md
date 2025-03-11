@@ -97,33 +97,42 @@ Blink is optimized for high-performance. Here are some benchmark results from ou
 
 ## Usage
 
+Basic usage:
+
 ```bash
-blink -path /path/to/watch -event-addr :12345 -event-path /events
+# Watch the current directory
+blink
+
+# Watch a specific directory
+blink --path /path/to/watch
+
+# Customize the event server
+blink --path /path/to/watch --event-addr :12345 --event-path /events
 ```
 
 ### Command-line Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-path` | Directory path to watch for changes (must be a valid directory) | `"."` |
-| `-allowed-origin` | Value for Access-Control-Allow-Origin header | `"*"` |
-| `-event-addr` | Address to serve events on ([host][:port]) | `":12345"` |
-| `-event-path` | URL path for the event stream | `"/events"` |
-| `-stream-method` | Method for streaming events (sse, websocket, both) | `"sse"` |
-| `-refresh` | Refresh duration for events | `100ms` |
-| `-verbose` | Enable verbose logging | `false` |
-| `-max-procs` | Maximum number of CPUs to use | all available |
-| `-include` | Include patterns for files (e.g., "*.js,*.css,*.html") | none |
-| `-exclude` | Exclude patterns for files (e.g., "node_modules,*.tmp") | none |
-| `-events` | Include event types (e.g., "write,create") | none |
-| `-ignore` | Ignore event types (e.g., "chmod") | none |
-| `-webhook-url` | URL for the webhook | none |
-| `-webhook-method` | HTTP method for the webhook | `"POST"` |
-| `-webhook-headers` | Headers for the webhook (format: "key1:value1,key2:value2") | none |
-| `-webhook-timeout` | Timeout for the webhook | `5s` |
-| `-webhook-debounce-duration` | Debounce duration for the webhook | `0s` |
-| `-webhook-max-retries` | Maximum number of retries for the webhook | `3` |
-| `-help` | Show help | n/a |
+| `--path` | Directory path to watch for changes (must be a valid directory) | `"."` (current directory) |
+| `--allowed-origin` | Value for Access-Control-Allow-Origin header | `"*"` |
+| `--event-addr` | Address to serve events on ([host][:port]) | `":12345"` |
+| `--event-path` | URL path for the event stream | `"/events"` |
+| `--stream-method` | Method for streaming events (sse, websocket, both) | `"sse"` |
+| `--refresh` | Refresh duration for events | `100ms` |
+| `--verbose` | Enable verbose logging | `false` |
+| `--max-procs` | Maximum number of CPUs to use | all available |
+| `--include` | Include patterns for files (e.g., "*.js,*.css,*.html") | none |
+| `--exclude` | Exclude patterns for files (e.g., "node_modules,*.tmp") | none |
+| `--events` | Include event types (e.g., "write,create") | none |
+| `--ignore` | Ignore event types (e.g., "chmod") | none |
+| `--webhook-url` | URL for the webhook | none |
+| `--webhook-method` | HTTP method for the webhook | `"POST"` |
+| `--webhook-headers` | Headers for the webhook (format: "key1:value1,key2:value2") | none |
+| `--webhook-timeout` | Timeout for the webhook | `5s` |
+| `--webhook-debounce-duration` | Debounce duration for the webhook | `0s` |
+| `--webhook-max-retries` | Maximum number of retries for the webhook | `3` |
+| `--help` | Show help | n/a |
 
 ### Event Streaming
 

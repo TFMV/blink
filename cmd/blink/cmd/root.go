@@ -152,7 +152,14 @@ func initConfig() {
 		viper.SetConfigName(".blink")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	// Use specific environment variable prefixes to avoid conflicts
+	viper.SetEnvPrefix("BLINK")
+
+	// Replace dots and dashes in flags with underscores for environment variables
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
+
+	// Read in environment variables that match
+	viper.AutomaticEnv()
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
@@ -170,6 +177,18 @@ func runWatcher() error {
 
 	// Get the path to watch, ensuring it's a valid directory
 	watchPath := viper.GetString("path")
+
+	// If path is empty or equals ".", use the current working directory
+	if watchPath == "" || watchPath == "." {
+		var err error
+		watchPath, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("error getting current working directory: %w", err)
+		}
+		fmt.Printf("Using current working directory: %s\n", watchPath)
+	} else {
+		fmt.Printf("Using specified path: %s\n", watchPath)
+	}
 
 	// Check if the path exists and is a directory
 	fileInfo, err := os.Stat(watchPath)
