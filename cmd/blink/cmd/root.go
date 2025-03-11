@@ -22,6 +22,7 @@ var (
 	refreshDuration time.Duration
 	verbose         bool
 	maxProcs        int
+	showEvents      bool
 	// Filtering flags
 	includePatterns string
 	excludePatterns string
@@ -79,6 +80,7 @@ func init() {
 	rootCmd.Flags().StringVar(&eventPath, "event-path", "/events", "URL path for the event stream")
 	rootCmd.Flags().DurationVar(&refreshDuration, "refresh", 100*time.Millisecond, "Refresh duration for events")
 	rootCmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	rootCmd.Flags().BoolVar(&showEvents, "show-events", true, "Show file events in the console")
 	rootCmd.Flags().IntVar(&maxProcs, "max-procs", runtime.NumCPU(), "Maximum number of CPUs to use")
 	rootCmd.Flags().StringVar(&includePatterns, "include", "", "Include patterns for files (e.g., \"*.js,*.css,*.html\")")
 	rootCmd.Flags().StringVar(&excludePatterns, "exclude", "", "Exclude patterns for files (e.g., \"node_modules,*.tmp\")")
@@ -99,6 +101,7 @@ func init() {
 	viper.BindPFlag("event-path", rootCmd.Flags().Lookup("event-path"))
 	viper.BindPFlag("refresh", rootCmd.Flags().Lookup("refresh"))
 	viper.BindPFlag("verbose", rootCmd.Flags().Lookup("verbose"))
+	viper.BindPFlag("show-events", rootCmd.Flags().Lookup("show-events"))
 	viper.BindPFlag("max-procs", rootCmd.Flags().Lookup("max-procs"))
 	viper.BindPFlag("include", rootCmd.Flags().Lookup("include"))
 	viper.BindPFlag("exclude", rootCmd.Flags().Lookup("exclude"))
@@ -119,6 +122,7 @@ func init() {
 	viper.SetDefault("event-path", "/events")
 	viper.SetDefault("refresh", 100*time.Millisecond)
 	viper.SetDefault("verbose", false)
+	viper.SetDefault("show-events", true)
 	viper.SetDefault("max-procs", runtime.NumCPU())
 	viper.SetDefault("include", "")
 	viper.SetDefault("exclude", "")
@@ -260,6 +264,9 @@ func runWatcher() error {
 	}
 	options = append(options, blink.WithStreamMethod(streamMethod))
 
+	// Add show events option
+	options = append(options, blink.WithShowEvents(viper.GetBool("show-events")))
+
 	// Print information about the watcher
 	fmt.Printf("Watching %s\n", watchPath)
 	fmt.Printf("Event server address: %s\n", viper.GetString("event-addr"))
@@ -267,6 +274,7 @@ func runWatcher() error {
 	fmt.Printf("Stream method: %s\n", streamMethodStr)
 	fmt.Printf("Refresh duration: %v\n", viper.GetDuration("refresh"))
 	fmt.Printf("Allowed origin: %s\n", viper.GetString("allowed-origin"))
+	fmt.Printf("Show events: %v\n", viper.GetBool("show-events"))
 
 	// Print filter information if specified
 	if viper.GetString("include") != "" {

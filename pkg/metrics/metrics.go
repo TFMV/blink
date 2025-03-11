@@ -23,7 +23,6 @@ var (
 		Name: "blink_active_watchers",
 		Help: "The number of active file watchers",
 	})
-
 	// WebhookLatency tracks webhook request latency
 	WebhookLatency = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "blink_webhook_latency_seconds",
