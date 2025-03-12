@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TFMV/blink/pkg/logger"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -47,8 +48,8 @@ type WebhookPayload struct {
 	Path string `json:"path"`
 	// Type of event (create, write, remove, rename, chmod)
 	EventType string `json:"event_type"`
-	// Time the event occurred
-	Time time.Time `json:"time"`
+	// Time the event occurred (RFC3339 format)
+	Timestamp string `json:"timestamp"`
 }
 
 // NewWebhookManager creates a new webhook manager
@@ -86,18 +87,27 @@ func NewWebhookManager(config WebhookConfig) *WebhookManager {
 	return manager
 }
 
-// HandleEvent handles a file system event
+// HandleEvent processes a file system event and sends it to the webhook
 func (m *WebhookManager) HandleEvent(event fsnotify.Event) {
-	// Send event to channel for processing
-	select {
-	case m.eventChan <- event:
-		// Successfully sent
-	default:
-		// Channel is full, log but don't block
-		if LogError != nil {
-			LogError(fmt.Errorf("webhook event channel is full, dropping event for %s", event.Name))
-		}
+	// Skip if no URL is configured
+	if m.Config.URL == "" {
+		return
 	}
+
+	// If debounce is enabled, use the event channel
+	if m.Config.DebounceDuration > 0 {
+		select {
+		case m.eventChan <- event:
+			// Event added to channel
+		default:
+			// Channel is full, log and drop the event
+			logger.Error(fmt.Errorf("webhook event channel is full, dropping event for %s", event.Name))
+		}
+		return
+	}
+
+	// Otherwise, send the webhook immediately
+	m.sendWebhook(event)
 }
 
 // processEvents processes events from the event channel
@@ -139,75 +149,70 @@ func (m *WebhookManager) shouldDebounce(event fsnotify.Event) bool {
 	return false
 }
 
-// sendWebhook sends a webhook for an event
+// sendWebhook sends a webhook for the given event
 func (m *WebhookManager) sendWebhook(event fsnotify.Event) {
-	// Create payload
+	// Create the payload
 	payload := WebhookPayload{
 		Path:      event.Name,
 		EventType: eventTypeToString(event.Op),
-		Time:      time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	// Marshal payload to JSON
+	// Marshal the payload to JSON
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		if LogError != nil {
-			LogError(fmt.Errorf("error marshaling webhook payload: %w", err))
-		}
+		logger.Error(fmt.Errorf("error marshaling webhook payload: %w", err))
 		return
 	}
 
-	// Create request
+	// Create the request
 	req, err := http.NewRequest(m.Config.Method, m.Config.URL, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		if LogError != nil {
-			LogError(fmt.Errorf("error creating webhook request: %w", err))
-		}
+		logger.Error(fmt.Errorf("error creating webhook request: %w", err))
 		return
 	}
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Blink-Webhook")
 	for key, value := range m.Config.Headers {
 		req.Header.Set(key, value)
 	}
 
-	// Send request with retries
+	// Send the request with retries
 	var resp *http.Response
+	var sendErr error
+
+	client := &http.Client{
+		Timeout: m.Config.Timeout,
+	}
+
 	for i := 0; i <= m.Config.MaxRetries; i++ {
-		resp, err = m.client.Do(req)
-		if err == nil {
+		resp, sendErr = client.Do(req)
+		if sendErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
 
 		if i < m.Config.MaxRetries {
 			// Wait before retrying
-			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+			time.Sleep(time.Duration(i+1) * time.Second)
 		}
 	}
 
 	// Check for errors
-	if err != nil {
-		if LogError != nil {
-			LogError(fmt.Errorf("error sending webhook after %d retries: %w", m.Config.MaxRetries, err))
-		}
+	if sendErr != nil {
+		logger.Error(fmt.Errorf("error sending webhook after %d retries: %w", m.Config.MaxRetries, sendErr))
 		return
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if LogError != nil {
-			LogError(fmt.Errorf("webhook returned non-success status code: %d", resp.StatusCode))
-		}
+		logger.Error(fmt.Errorf("webhook returned non-success status code: %d", resp.StatusCode))
 		return
 	}
 
 	// Log success
-	if LogInfo != nil {
-		LogInfo(fmt.Sprintf("Webhook sent successfully for %s (%s)", event.Name, eventTypeToString(event.Op)))
-	}
+	logger.Infof("Webhook sent successfully for %s (%s)", event.Name, eventTypeToString(event.Op))
 }
 
 // eventTypeToString converts an fsnotify.Op to a string

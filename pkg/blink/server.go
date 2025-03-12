@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TFMV/blink/pkg/logger"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -27,17 +28,17 @@ type (
 
 // LogInfo logs a message as information
 var LogInfo = func(msg string) {
-	log.Println(msg)
+	logger.Info(msg)
 }
 
 // LogError logs a message as an error, but does not end the program
 var LogError = func(err error) {
-	log.Println(err.Error())
+	logger.Error(err)
 }
 
 // FatalExit ends the program after logging a message
 var FatalExit = func(err error) {
-	log.Fatalln(err)
+	logger.Fatal(err)
 }
 
 // Exists checks if the given path exists, using os.Stat
@@ -50,7 +51,7 @@ var Exists = func(path string) bool {
 func SetVerbose(enabled bool) {
 	if enabled {
 		LogInfo = func(msg string) {
-			log.Println(msg)
+			logger.Info(msg)
 		}
 	} else {
 		LogInfo = nil
@@ -324,45 +325,57 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 			select {
 			case events := <-watcher.Events():
 				for _, event := range events {
-					// Print the event to the console
-					if opts.ShowEvents {
-						// Format the event for display
-						var eventType string
-						switch event.Op {
-						case fsnotify.Create:
-							eventType = "CREATE"
-						case fsnotify.Write:
-							eventType = "WRITE"
-						case fsnotify.Remove:
-							eventType = "REMOVE"
-						case fsnotify.Rename:
-							eventType = "RENAME"
-						case fsnotify.Chmod:
-							eventType = "CHMOD"
-						default:
-							eventType = "UNKNOWN"
+					// Check if the event should be filtered
+					shouldProcess := true
+					if opts.Filter != nil {
+						shouldProcess = opts.Filter.ShouldProcessEvent(event)
+						if !shouldProcess {
+							logger.Debugf("Filtered event: %s %s", event.Op, event.Name)
 						}
+					}
 
-						// Get relative path if possible
-						relPath := event.Name
-						if absPath, err := filepath.Abs(path); err == nil {
-							if rel, err := filepath.Rel(absPath, event.Name); err == nil {
-								relPath = rel
+					// Only process the event if it passes the filter
+					if shouldProcess {
+						// Print the event to the console
+						if opts.ShowEvents {
+							// Format the event for display
+							var eventType string
+							switch event.Op {
+							case fsnotify.Create:
+								eventType = "CREATE"
+							case fsnotify.Write:
+								eventType = "WRITE"
+							case fsnotify.Remove:
+								eventType = "REMOVE"
+							case fsnotify.Rename:
+								eventType = "RENAME"
+							case fsnotify.Chmod:
+								eventType = "CHMOD"
+							default:
+								eventType = "UNKNOWN"
 							}
+
+							// Get relative path if possible
+							relPath := event.Name
+							if absPath, err := filepath.Abs(path); err == nil {
+								if rel, err := filepath.Rel(absPath, event.Name); err == nil {
+									relPath = rel
+								}
+							}
+
+							// Log the event with colors using zerolog
+							logger.Event(eventType, relPath)
 						}
 
-						// Print the event
-						fmt.Printf("[%s] %s: %s\n", time.Now().Format("15:04:05"), eventType, relPath)
-					}
+						// Send the event to the streamer
+						if err := streamer.Send(event); err != nil && LogError != nil {
+							LogError(err)
+						}
 
-					// Send the event to the streamer
-					if err := streamer.Send(event); err != nil && LogError != nil {
-						LogError(err)
-					}
-
-					// Send webhook if configured
-					if webhookManager != nil {
-						webhookManager.HandleEvent(event)
+						// Send webhook if configured
+						if webhookManager != nil {
+							webhookManager.HandleEvent(event)
+						}
 					}
 				}
 
