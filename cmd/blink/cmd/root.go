@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/TFMV/blink/pkg/blink"
+	"github.com/TFMV/blink/pkg/logger"
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,6 +30,7 @@ var (
 	excludePatterns string
 	includeEvents   string
 	ignoreEvents    string
+	filterDev       bool
 	// Webhook flags
 	webhookURL              string
 	webhookMethod           string
@@ -37,6 +40,10 @@ var (
 	webhookMaxRetries       int
 	// Streaming flags
 	streamMethod string
+	// Logging flags
+	logLevel  string
+	logPretty bool
+	logColors bool
 
 	// rootCmd represents the base command when called without any subcommands
 	rootCmd = &cobra.Command{
@@ -86,6 +93,7 @@ func init() {
 	rootCmd.Flags().StringVar(&excludePatterns, "exclude", "", "Exclude patterns for files (e.g., \"node_modules,*.tmp\")")
 	rootCmd.Flags().StringVar(&includeEvents, "events", "", "Include event types (e.g., \"write,create\")")
 	rootCmd.Flags().StringVar(&ignoreEvents, "ignore", "", "Ignore event types (e.g., \"chmod\")")
+	rootCmd.Flags().BoolVar(&filterDev, "filter-dev", false, "Filter out development-related noise")
 	rootCmd.Flags().StringVar(&webhookURL, "webhook-url", "", "URL for the webhook")
 	rootCmd.Flags().StringVar(&webhookMethod, "webhook-method", "POST", "HTTP method for the webhook")
 	rootCmd.Flags().StringVar(&webhookHeaders, "webhook-headers", "", "Headers for the webhook")
@@ -93,6 +101,10 @@ func init() {
 	rootCmd.Flags().DurationVar(&webhookDebounceDuration, "webhook-debounce-duration", 0*time.Second, "Debounce duration for the webhook")
 	rootCmd.Flags().IntVar(&webhookMaxRetries, "webhook-max-retries", 3, "Maximum number of retries for the webhook")
 	rootCmd.Flags().StringVar(&streamMethod, "stream-method", "sse", "Method for streaming events (sse, websocket, both)")
+	// Add logging flags
+	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal)")
+	rootCmd.Flags().BoolVar(&logPretty, "log-pretty", true, "Enable pretty logging")
+	rootCmd.Flags().BoolVar(&logColors, "log-colors", true, "Enable colors in pretty logging")
 
 	// Bind flags to viper
 	viper.BindPFlag("path", rootCmd.Flags().Lookup("path"))
@@ -107,6 +119,7 @@ func init() {
 	viper.BindPFlag("exclude", rootCmd.Flags().Lookup("exclude"))
 	viper.BindPFlag("events", rootCmd.Flags().Lookup("events"))
 	viper.BindPFlag("ignore", rootCmd.Flags().Lookup("ignore"))
+	viper.BindPFlag("filter-dev", rootCmd.Flags().Lookup("filter-dev"))
 	viper.BindPFlag("webhook-url", rootCmd.Flags().Lookup("webhook-url"))
 	viper.BindPFlag("webhook-method", rootCmd.Flags().Lookup("webhook-method"))
 	viper.BindPFlag("webhook-headers", rootCmd.Flags().Lookup("webhook-headers"))
@@ -114,6 +127,9 @@ func init() {
 	viper.BindPFlag("webhook-debounce-duration", rootCmd.Flags().Lookup("webhook-debounce-duration"))
 	viper.BindPFlag("webhook-max-retries", rootCmd.Flags().Lookup("webhook-max-retries"))
 	viper.BindPFlag("stream-method", rootCmd.Flags().Lookup("stream-method"))
+	viper.BindPFlag("log-level", rootCmd.Flags().Lookup("log-level"))
+	viper.BindPFlag("log-pretty", rootCmd.Flags().Lookup("log-pretty"))
+	viper.BindPFlag("log-colors", rootCmd.Flags().Lookup("log-colors"))
 
 	// Set default values in viper
 	viper.SetDefault("path", ".")
@@ -128,6 +144,7 @@ func init() {
 	viper.SetDefault("exclude", "")
 	viper.SetDefault("events", "")
 	viper.SetDefault("ignore", "")
+	viper.SetDefault("filter-dev", false)
 	viper.SetDefault("webhook-url", "")
 	viper.SetDefault("webhook-method", "POST")
 	viper.SetDefault("webhook-headers", "")
@@ -135,6 +152,9 @@ func init() {
 	viper.SetDefault("webhook-debounce-duration", 0*time.Second)
 	viper.SetDefault("webhook-max-retries", 3)
 	viper.SetDefault("stream-method", "sse")
+	viper.SetDefault("log-level", "info")
+	viper.SetDefault("log-pretty", true)
+	viper.SetDefault("log-colors", true)
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -169,6 +189,40 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
+
+	// Initialize logger
+	initLogger()
+
+	// Set GOMAXPROCS
+	runtime.GOMAXPROCS(viper.GetInt("max-procs"))
+}
+
+// initLogger initializes the logger with the configured options
+func initLogger() {
+	// Parse log level
+	level := zerolog.InfoLevel
+	switch strings.ToLower(viper.GetString("log-level")) {
+	case "debug":
+		level = zerolog.DebugLevel
+	case "info":
+		level = zerolog.InfoLevel
+	case "warn":
+		level = zerolog.WarnLevel
+	case "error":
+		level = zerolog.ErrorLevel
+	case "fatal":
+		level = zerolog.FatalLevel
+	}
+
+	// Initialize logger
+	logger.Init(
+		logger.WithLevel(level),
+		logger.WithPretty(viper.GetBool("log-pretty")),
+		logger.WithColors(viper.GetBool("log-colors")),
+	)
+
+	// Set verbose mode
+	blink.SetVerbose(viper.GetBool("verbose"))
 }
 
 // runWatcher starts the file watcher and event server
@@ -209,7 +263,8 @@ func runWatcher() error {
 
 	// Create filter if any filter options are specified
 	if viper.GetString("include") != "" || viper.GetString("exclude") != "" ||
-		viper.GetString("events") != "" || viper.GetString("ignore") != "" {
+		viper.GetString("events") != "" || viper.GetString("ignore") != "" ||
+		viper.GetBool("filter-dev") {
 
 		filter := blink.NewEventFilter()
 
@@ -231,6 +286,11 @@ func runWatcher() error {
 		// Add ignore events if specified
 		if ignoreEvents := viper.GetString("ignore"); ignoreEvents != "" {
 			filter.SetIgnoreEvents(ignoreEvents)
+		}
+
+		// Apply development filtering if enabled
+		if viper.GetBool("filter-dev") {
+			blink.ApplyDevFilter(filter, watchPath)
 		}
 
 		// Add the filter to options
@@ -288,6 +348,9 @@ func runWatcher() error {
 	}
 	if viper.GetString("ignore") != "" {
 		fmt.Printf("Ignore events: %s\n", viper.GetString("ignore"))
+	}
+	if viper.GetBool("filter-dev") {
+		fmt.Printf("Development filtering: enabled\n")
 	}
 
 	// Print webhook information if specified

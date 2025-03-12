@@ -2,9 +2,11 @@ package blink
 
 import (
 	"errors"
+	"os"
 	"runtime"
 	"sync"
 
+	"github.com/TFMV/blink/pkg/logger"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -127,4 +129,26 @@ func (watcher *RecursiveWatcher) Close() error {
 	close(watcher.Folders)
 
 	return err
+}
+
+// addFolderToWatch adds a folder to the watcher
+func (w *Watcher) addFolderToWatch(folder string) error {
+	// Check if the folder exists
+	info, err := os.Stat(folder)
+	if err != nil {
+		return err
+	}
+
+	// Make sure it's a directory
+	if !info.IsDir() {
+		return nil
+	}
+
+	// Add the folder to the watcher
+	if err := w.watcher.Add(folder); err != nil {
+		logger.Error(err)
+		return err
+	}
+
+	return nil
 }

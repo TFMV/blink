@@ -3,7 +3,7 @@
 # Variables
 IMAGE_NAME := blink
 IMAGE_TAG := latest
-DOCKER_REPO := your-docker-repo  # Change this to your Docker repository
+DOCKER_REPO := tfmv
 
 build:
 	go build -o blink ./cmd/blink

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TFMV/blink/pkg/logger"
 	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 )
@@ -57,11 +58,12 @@ type StreamerOptions struct {
 
 // SSEStreamer implements EventStreamer using Server-Sent Events
 type SSEStreamer struct {
-	server  *http.Server
-	events  TimeEventMap
-	mutex   sync.RWMutex
-	opts    StreamerOptions
-	started bool
+	opts      StreamerOptions
+	server    *http.Server
+	events    TimeEventMap
+	mutex     sync.Mutex
+	clients   map[string]chan fsnotify.Event
+	clientsMu sync.Mutex
 }
 
 // NewSSEStreamer creates a new SSE streamer
@@ -80,46 +82,36 @@ func NewSSEStreamer(opts StreamerOptions) *SSEStreamer {
 	}
 
 	return &SSEStreamer{
-		events: make(TimeEventMap),
-		opts:   opts,
+		opts:    opts,
+		events:  make(TimeEventMap),
+		clients: make(map[string]chan fsnotify.Event),
 	}
 }
 
 // Start initializes and starts the SSE streamer
 func (s *SSEStreamer) Start(ctx context.Context) error {
-	s.mutex.Lock()
-	if s.started {
-		s.mutex.Unlock()
-		return nil
-	}
-	s.started = true
-	s.mutex.Unlock()
-
 	mux := http.NewServeMux()
-	mux.HandleFunc(s.opts.Path, s.handleSSE())
+	mux.HandleFunc(s.opts.Path, s.handleSSE)
 
 	s.server = &http.Server{
 		Addr:    s.opts.Address,
 		Handler: mux,
 	}
 
-	// Start the server in a goroutine
 	go func() {
-		if LogInfo != nil {
-			LogInfo(fmt.Sprintf("SSE server started on %s%s", s.opts.Address, s.opts.Path))
-		}
-
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			if LogError != nil {
-				LogError(fmt.Errorf("SSE server error: %w", err))
-			}
+			logger.Error(err)
 		}
 	}()
 
-	// Monitor context for cancellation
+	logger.Infof("SSE server started on %s%s", s.opts.Address, s.opts.Path)
+
+	// Listen for context cancellation
 	go func() {
 		<-ctx.Done()
-		s.Stop()
+		if err := s.Stop(); err != nil {
+			logger.Error(err)
+		}
 	}()
 
 	return nil
@@ -127,10 +119,7 @@ func (s *SSEStreamer) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the SSE streamer
 func (s *SSEStreamer) Stop() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	if !s.started || s.server == nil {
+	if s.server == nil {
 		return nil
 	}
 
@@ -140,7 +129,6 @@ func (s *SSEStreamer) Stop() error {
 
 	// Shutdown the server
 	err := s.server.Shutdown(ctx)
-	s.started = false
 	return err
 }
 
@@ -158,59 +146,56 @@ func (s *SSEStreamer) Send(event fsnotify.Event) error {
 	return nil
 }
 
-// handleSSE returns an http.HandlerFunc for SSE
-func (s *SSEStreamer) handleSSE() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream;charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", s.opts.AllowedOrigin)
+// handleSSE handles SSE connections
+func (s *SSEStreamer) handleSSE(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream;charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", s.opts.AllowedOrigin)
 
-		var id uint64
+	var id uint64
 
-		for {
-			func() { // Use an anonymous function for defer
-				s.mutex.RLock()
-				defer s.mutex.RUnlock()
+	for {
+		func() { // Use an anonymous function for defer
+			s.mutex.Lock()
+			defer s.mutex.Unlock()
 
-				if len(s.events) > 0 {
-					// Remove old keys
-					RemoveOldEvents(&s.events, s.opts.RefreshDuration*10)
+			if len(s.events) > 0 {
+				// Remove old keys
+				RemoveOldEvents(&s.events, s.opts.RefreshDuration*10)
 
-					// Sort the events by the registered time
-					var keys timeKeys
-					for k := range s.events {
-						keys = append(keys, k)
+				// Sort the events by the registered time
+				var keys timeKeys
+				for k := range s.events {
+					keys = append(keys, k)
+				}
+				sort.Sort(keys)
+
+				prevname := ""
+				for _, k := range keys {
+					ev := s.events[k]
+
+					// Apply filter if one exists
+					if s.opts.Filter != nil && !s.opts.Filter.ShouldProcessEvent(fsnotify.Event(ev)) {
+						continue
 					}
-					sort.Sort(keys)
 
-					prevname := ""
-					for _, k := range keys {
-						ev := s.events[k]
+					// Log the event
+					logger.Infof("EVENT %s", ev.String())
 
-						// Apply filter if one exists
-						if s.opts.Filter != nil && !s.opts.Filter.ShouldProcessEvent(fsnotify.Event(ev)) {
-							continue
-						}
-
-						if LogInfo != nil {
-							LogInfo("EVENT " + ev.String())
-						}
-
-						// Avoid sending several events for the same filename
-						if ev.Name != prevname {
-							// Send an event to the client
-							WriteEvent(w, &id, ev.Name, true)
-							id++
-							prevname = ev.Name
-						}
+					// Avoid sending several events for the same filename
+					if ev.Name != prevname {
+						// Send an event to the client
+						WriteEvent(w, &id, ev.Name, true)
+						id++
+						prevname = ev.Name
 					}
 				}
-			}()
+			}
+		}()
 
-			// Wait for old events to be gone, and new to appear
-			time.Sleep(s.opts.RefreshDuration)
-		}
+		// Wait for old events to be gone, and new to appear
+		time.Sleep(s.opts.RefreshDuration)
 	}
 }
 
@@ -223,13 +208,14 @@ type WebSocketClient struct {
 
 // WebSocketStreamer implements EventStreamer using WebSockets
 type WebSocketStreamer struct {
-	server   *http.Server
-	upgrader websocket.Upgrader
-	clients  map[string]*WebSocketClient
-	mutex    sync.RWMutex
-	opts     StreamerOptions
-	started  bool
-	filter   *EventFilter
+	server    *http.Server
+	upgrader  websocket.Upgrader
+	clients   map[string]*WebSocketClient
+	mutex     sync.RWMutex
+	opts      StreamerOptions
+	started   bool
+	filter    *EventFilter
+	clientsMu sync.Mutex
 }
 
 // NewWebSocketStreamer creates a new WebSocket streamer
@@ -279,23 +265,20 @@ func (ws *WebSocketStreamer) Start(ctx context.Context) error {
 		Handler: mux,
 	}
 
-	// Start the server in a goroutine
 	go func() {
-		if LogInfo != nil {
-			LogInfo(fmt.Sprintf("WebSocket server started on %s%s", ws.opts.Address, ws.opts.Path))
-		}
-
 		if err := ws.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			if LogError != nil {
-				LogError(fmt.Errorf("WebSocket server error: %w", err))
-			}
+			logger.Error(fmt.Errorf("WebSocket server error: %w", err))
 		}
 	}()
 
-	// Monitor context for cancellation
+	logger.Infof("WebSocket server started on %s%s", ws.opts.Address, ws.opts.Path)
+
+	// Listen for context cancellation
 	go func() {
 		<-ctx.Done()
-		ws.Stop()
+		if err := ws.Stop(); err != nil {
+			logger.Error(err)
+		}
 	}()
 
 	return nil
@@ -359,23 +342,19 @@ func (ws *WebSocketStreamer) Send(event fsnotify.Event) error {
 			// Successfully sent
 		default:
 			// Channel is full, log and continue
-			if LogError != nil {
-				LogError(fmt.Errorf("client %s send buffer full, dropping message", client.ID))
-			}
+			logger.Error(fmt.Errorf("client %s send buffer full, dropping message", client.ID))
 		}
 	}
 
 	return nil
 }
 
-// handleWebSocket handles incoming WebSocket connections
+// handleWebSocket handles WebSocket connections
 func (ws *WebSocketStreamer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Upgrade the HTTP connection to a WebSocket connection
 	conn, err := ws.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		if LogError != nil {
-			LogError(fmt.Errorf("failed to upgrade connection: %w", err))
-		}
+		logger.Error(fmt.Errorf("failed to upgrade connection: %w", err))
 		return
 	}
 
@@ -386,18 +365,16 @@ func (ws *WebSocketStreamer) handleWebSocket(w http.ResponseWriter, r *http.Requ
 	client := &WebSocketClient{
 		ID:         clientID,
 		Connection: conn,
-		SendChan:   make(chan []byte, 256), // Buffer for outgoing messages
+		SendChan:   make(chan []byte, 256),
 	}
 
 	// Register the client
-	ws.mutex.Lock()
-	ws.clients[clientID] = client
-	ws.mutex.Unlock()
+	ws.clientsMu.Lock()
+	ws.clients[client.ID] = client
+	ws.clientsMu.Unlock()
 
-	// Start goroutine for writing messages to the client
+	// Start goroutines for writing and reading
 	go ws.writeLoop(client)
-
-	// Start goroutine for reading messages from the client
 	go ws.readLoop(client)
 }
 
@@ -421,9 +398,7 @@ func (ws *WebSocketStreamer) writeLoop(client *WebSocketClient) {
 
 			// Write the message
 			if err := client.Connection.WriteMessage(websocket.TextMessage, message); err != nil {
-				if LogError != nil {
-					LogError(fmt.Errorf("error writing to client %s: %w", client.ID, err))
-				}
+				logger.Error(fmt.Errorf("error writing to client %s: %w", client.ID, err))
 				return
 			}
 
@@ -458,9 +433,7 @@ func (ws *WebSocketStreamer) readLoop(client *WebSocketClient) {
 		_, _, err := client.Connection.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				if LogError != nil {
-					LogError(fmt.Errorf("WebSocket read error: %w", err))
-				}
+				logger.Error(fmt.Errorf("WebSocket read error: %w", err))
 			}
 			break
 		}
