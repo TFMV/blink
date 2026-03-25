@@ -73,11 +73,9 @@ func RemoveOldEvents(events *TimeEventMap, maxAge time.Duration) {
 }
 
 // CollectFileChangeEvents collects file change events from the watcher
-func CollectFileChangeEvents(watcher *Watcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration, filter *EventFilter, webhookManager *WebhookManager) {
+func CollectFileChangeEvents(ctx context.Context, watcher *Watcher, mut *sync.Mutex, events TimeEventMap, maxAge time.Duration, filter *EventFilter, webhookManager *WebhookManager) {
 	// Start the watcher
-	if err := watcher.Start(); err != nil {
-		FatalExit(err)
-	}
+	watcher.Start()
 
 	// Process events from the watcher
 	go func() {
@@ -120,6 +118,8 @@ func CollectFileChangeEvents(watcher *Watcher, mut *sync.Mutex, events TimeEvent
 				if err != nil && LogError != nil {
 					LogError(err)
 				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
@@ -206,6 +206,10 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 		FatalExit(errors.New("path does not exist: " + path))
 	}
 
+	// Create a new context for the server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Parse options
 	opts := &Options{}
 	for _, option := range options {
@@ -261,7 +265,7 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 		}
 	}
 
-	watcher, err := NewWatcher(config)
+	watcher, err := NewWatcher(ctx, config)
 	if err != nil {
 		FatalExit(err)
 	}
@@ -279,10 +283,6 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 			MaxRetries:       opts.WebhookMaxRetries,
 		})
 	}
-
-	// Create a context for the streamers
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Create the appropriate streamer based on the stream method
 	var streamer EventStreamer
@@ -391,9 +391,7 @@ func EventServer(path, allowed, eventAddr, eventPath string, refreshDuration tim
 	}()
 
 	// Start the watcher
-	if err := watcher.Start(); err != nil {
-		FatalExit(err)
-	}
+	watcher.Start()
 
 	// Block until context is canceled
 	<-ctx.Done()
