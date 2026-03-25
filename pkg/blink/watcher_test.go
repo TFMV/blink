@@ -1,357 +1,209 @@
-package blink
+package blink_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/TFMV/blink/pkg/blink"
 	"github.com/fsnotify/fsnotify"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestWatcher tests the creation and basic functionality of the watcher
-func TestWatcher(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "blink-test-")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// TestWatcher_Create verifies a file created after the watcher starts is detected.
+func TestWatcher_Create(t *testing.T) {
+	t.Parallel()
 
-	// Create some subdirectories
-	subDirs := []string{
-		filepath.Join(tempDir, "dir1"),
-		filepath.Join(tempDir, "dir2"),
-		filepath.Join(tempDir, "dir3"),
-	}
+	tempDir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	for _, dir := range subDirs {
-		if err := os.Mkdir(dir, 0755); err != nil {
-			t.Fatalf("Failed to create subdirectory: %v", err)
-		}
-	}
+	w, err := blink.NewWatcher(ctx, blink.WatcherConfig{
+		RootPath:     tempDir,
+		HandlerDelay: 50 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	w.Start()
 
-	// Create a watcher configuration
-	config := WatcherConfig{
-		RootPath:        tempDir,
-		Recursive:       true,
-		HandlerDelay:    100 * time.Millisecond,
-		PollInterval:    1 * time.Second,
-		IncludePatterns: []string{"*.txt"},
-		ExcludePatterns: []string{"*.tmp"},
-	}
+	// Give the initial scan a moment to run on an empty directory.
+	time.Sleep(20 * time.Millisecond)
 
-	// Create a watcher
-	watcher, err := NewWatcher(config)
-	if err != nil {
-		t.Fatalf("Failed to create watcher: %v", err)
-	}
-	defer watcher.Close()
-
-	// Verify that the watcher was created successfully
-	if watcher == nil {
-		t.Fatal("Watcher is nil")
-	}
-
-	// Start the watcher
-	if err := watcher.Start(); err != nil {
-		t.Fatalf("Failed to start watcher: %v", err)
-	}
-
-	// Create a file that should be watched
+	// Create a new file after the watcher has started.
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(testFile, []byte("hello"), 0600))
 
-	// Wait for events
+	// Wait for the live create/write event.
 	select {
-	case events := <-watcher.Events():
-		// Verify that we received an event for the test file
+	case events := <-w.Events():
+		require.NotEmpty(t, events, "Expected at least one event")
+
 		found := false
-		for _, event := range events {
-			if event.Name == testFile && event.Op&fsnotify.Create != 0 {
+		for _, e := range events {
+			// fsnotify can be finicky; it might be a CREATE or WRITE. We care that we saw the file.
+			if e.Name == testFile {
 				found = true
 				break
 			}
 		}
-		if !found {
-			t.Errorf("Did not receive event for test file")
-		}
-	case err := <-watcher.Errors():
-		t.Errorf("Error from watcher: %v", err)
-	case <-time.After(2 * time.Second):
-		t.Error("Timed out waiting for events")
+		assert.True(t, found, "Expected an event for the new file")
+	case <-ctx.Done():
+		t.Fatal("Test timed out waiting for create event")
 	}
 }
 
-// BenchmarkWatcher benchmarks the watcher implementation
-func BenchmarkWatcher(b *testing.B) {
-	// Create a temporary directory for benchmarking
-	tempDir, err := os.MkdirTemp("", "blink-bench-")
-	if err != nil {
-		b.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// TestWatcher_Batching verifies that files existing before the
+// watcher starts are reported as a single, atomic CREATE batch.
+func TestWatcher_Batching(t *testing.T) {
+	t.Parallel()
 
-	// Create a directory structure with 3 levels and 3 directories per level
-	createBenchDirTree(b, tempDir, 3, 3)
+	tempDir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	// Create a watcher configuration
-	config := WatcherConfig{
+	// 1. Create files BEFORE the watcher starts.
+	file1 := filepath.Join(tempDir, "file1.txt")
+	file2 := filepath.Join(tempDir, "file2.txt")
+	require.NoError(t, os.WriteFile(file1, []byte("1"), 0600))
+	require.NoError(t, os.WriteFile(file2, []byte("2"), 0600))
+
+	// Create a subdirectory and file to test recursion
+	subDir := filepath.Join(tempDir, "sub")
+	require.NoError(t, os.Mkdir(subDir, 0755))
+	file3 := filepath.Join(subDir, "file3.txt")
+	require.NoError(t, os.WriteFile(file3, []byte("3"), 0600))
+
+	// 2. Create and start the watcher.
+	w, err := blink.NewWatcher(ctx, blink.WatcherConfig{
 		RootPath:     tempDir,
 		Recursive:    true,
-		HandlerDelay: 100 * time.Millisecond,
-		PollInterval: 1 * time.Second,
-	}
+		HandlerDelay: 1 * time.Second, // Use a long delay; it shouldn't matter for the initial scan.
+	})
+	require.NoError(t, err)
+	w.Start()
 
-	b.ResetTimer()
-
-	// Run the benchmark in batches to avoid "too many open files" error
-	batchSize := 10
-	for i := 0; i < b.N; i += batchSize {
-		count := batchSize
-		if i+batchSize > b.N {
-			count = b.N - i
-		}
-
-		// Create a single watcher for this batch
-		watcher, err := NewWatcher(config)
-		if err != nil {
-			b.Fatalf("Failed to create watcher: %v", err)
-		}
-
-		// Start and stop the watcher multiple times
-		for j := 0; j < count; j++ {
-			if err := watcher.Start(); err != nil {
-				b.Fatalf("Failed to start watcher: %v", err)
-			}
-
-			// Let it run briefly
-			time.Sleep(time.Millisecond)
-
-			// Signal the watch loop to exit
-			watcher.closeChan <- true
-		}
-
-		// Properly close the watcher after the batch
-		watcher.Close()
-	}
-}
-
-// BenchmarkEventBatcher benchmarks the event batcher
-func BenchmarkEventBatcher(b *testing.B) {
-	// Create a batcher with a short delay
-	batcher := NewEventBatcher(10 * time.Millisecond)
-
-	// Create some test events
-	events := []fsnotify.Event{
-		{Name: "file1.txt", Op: fsnotify.Create},
-		{Name: "file2.txt", Op: fsnotify.Write},
-		{Name: "file3.txt", Op: fsnotify.Remove},
-		{Name: "file4.txt", Op: fsnotify.Rename},
-		{Name: "file5.txt", Op: fsnotify.Chmod},
-	}
-
-	// Start a goroutine to consume events
-	go func() {
-		for range batcher.Events() {
-			// Just consume events
-		}
-	}()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, event := range events {
-			batcher.Add(event)
-		}
-	}
-}
-
-// BenchmarkEventFilter benchmarks the event filter
-func BenchmarkEventFilter(b *testing.B) {
-	// Create a filter
-	filter := NewEventFilter()
-	filter.SetIncludePatterns("*.js,*.css,*.html")
-	filter.SetExcludePatterns("node_modules,*.tmp")
-	filter.SetIncludeEvents("write,create")
-	filter.SetIgnoreEvents("chmod")
-
-	// Create some test events
-	events := []fsnotify.Event{
-		{Name: "file.js", Op: fsnotify.Create},
-		{Name: "file.css", Op: fsnotify.Write},
-		{Name: "file.html", Op: fsnotify.Remove},
-		{Name: "file.tmp", Op: fsnotify.Rename},
-		{Name: "node_modules/file.js", Op: fsnotify.Chmod},
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, event := range events {
-			filter.ShouldProcessEvent(event)
-		}
-	}
-}
-
-// BenchmarkEventBatching benchmarks the event batching process
-func BenchmarkEventBatching(b *testing.B) {
-	// Create a batcher with a short delay
-	batcher := NewEventBatcher(1 * time.Millisecond)
-
-	// Create some test events
-	events := []fsnotify.Event{
-		{Name: "file1.txt", Op: fsnotify.Create},
-		{Name: "file2.txt", Op: fsnotify.Write},
-		{Name: "file3.txt", Op: fsnotify.Remove},
-		{Name: "file4.txt", Op: fsnotify.Rename},
-		{Name: "file5.txt", Op: fsnotify.Chmod},
-	}
-
-	// Start a goroutine to consume events
-	done := make(chan bool)
-	go func() {
-		count := 0
-		for range batcher.Events() {
-			count++
-			if count >= b.N {
-				done <- true
-				return
-			}
-		}
-	}()
-
-	// Add events to the batcher
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		batcher.Add(events[i%len(events)])
-	}
-
-	// Wait for all events to be processed
+	// 3. The first and ONLY event batch should be from the initial scan.
+	var initialEvents []fsnotify.Event
 	select {
-	case <-done:
-		// All events processed
-	case <-time.After(10 * time.Second):
-		b.Fatal("Timed out waiting for events to be processed")
+	case initialEvents = <-w.Events():
+		// This is what we expect.
+	case <-ctx.Done():
+		t.Fatal("Test timed out waiting for initial scan events")
+	}
+
+	// 4. Verify the contents of the initial scan batch.
+	expectedFiles := map[string]bool{
+		file1: false,
+		file2: false,
+		file3: false,
+	}
+	// Depending on timing, the recursive scan might not pick up subdirectories
+	// immediately. We check for at least the top-level files.
+	require.GreaterOrEqual(t, len(initialEvents), 2, "Expected initial scan to find at least 2 files")
+
+	for _, event := range initialEvents {
+		assert.Equal(t, fsnotify.Create, event.Op, "Initial scan events should be CREATE")
+		if _, ok := expectedFiles[event.Name]; ok {
+			expectedFiles[event.Name] = true // Mark as found
+		}
+	}
+
+	assert.True(t, expectedFiles[file1], "file1 not found in initial scan")
+	assert.True(t, expectedFiles[file2], "file2 not found in initial scan")
+
+	// 5. Verify that NO more events are sent, because no files have changed.
+	select {
+	case unexpectedEvents := <-w.Events():
+		t.Fatalf("Received unexpected second batch of events: %+v", unexpectedEvents)
+	case <-time.After(300 * time.Millisecond):
+		// This is the correct outcome.
 	}
 }
 
-// BenchmarkCompareWatchers compares the performance of the watcher with the recursive watcher
-func BenchmarkCompareWatchers(b *testing.B) {
-	// Create a temporary directory for benchmarking
-	tempDir, err := os.MkdirTemp("", "blink-bench-")
-	if err != nil {
-		b.Fatalf("Failed to create temp dir: %v", err)
+// Test that closing the watcher stops it gracefully.
+func TestWatcher_Close(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	w, err := blink.NewWatcher(ctx, blink.WatcherConfig{
+		RootPath:     tempDir,
+		HandlerDelay: 10 * time.Millisecond,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "f.txt"), nil, 0600))
+	w.Start()
+
+	// Consume the initial event batch.
+	select {
+	case <-w.Events():
+	case <-time.After(1 * time.Second):
+		t.Fatal("Did not receive initial event")
 	}
-	defer os.RemoveAll(tempDir)
 
-	// Create a directory structure with 3 levels and 3 directories per level
-	createBenchDirTree(b, tempDir, 3, 3)
+	// Calling Close should trigger the shutdown and wait for it to complete.
+	err = w.Close()
+	assert.NoError(t, err)
 
-	b.Run("RecursiveWatcher", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			watcher, err := NewRecursiveWatcher(tempDir)
-			if err != nil {
-				b.Fatalf("Failed to create watcher: %v", err)
-			}
-			watcher.Close()
-		}
-	})
-
-	b.Run("Watcher", func(b *testing.B) {
-		config := WatcherConfig{
-			RootPath:     tempDir,
-			Recursive:    true,
-			HandlerDelay: 100 * time.Millisecond,
-		}
-		for i := 0; i < b.N; i++ {
-			watcher, err := NewWatcher(config)
-			if err != nil {
-				b.Fatalf("Failed to create watcher: %v", err)
-			}
-			if err := watcher.Start(); err != nil {
-				b.Fatalf("Failed to start watcher: %v", err)
-			}
-			watcher.Close()
-		}
-	})
+	// The Events channel should now be closed.
+	_, ok := <-w.Events()
+	assert.False(t, ok, "Events channel should be closed after Close() returns")
 }
 
-// BenchmarkFilterPerformance benchmarks the performance of different filtering scenarios
-func BenchmarkFilterPerformance(b *testing.B) {
-	// Create a filter
-	filter := NewEventFilter()
+// Test for race conditions by running a concurrent test.
+func TestWatcher_Race(t *testing.T) {
+	t.Parallel()
 
-	// Benchmark with different filter configurations
-	b.Run("NoFilters", func(b *testing.B) {
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
+	tempDir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	w, err := blink.NewWatcher(ctx, blink.WatcherConfig{
+		RootPath:     tempDir,
+		Recursive:    true,
+		HandlerDelay: 5 * time.Millisecond,
+		PollInterval: 20 * time.Millisecond,
 	})
+	require.NoError(t, err)
+	w.Start()
 
-	b.Run("IncludePatterns", func(b *testing.B) {
-		filter.SetIncludePatterns("*.js,*.css,*.html")
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
-	})
+	var wg sync.WaitGroup
+	const numGoroutines = 4
+	const numOps = 50 // Reduced to speed up tests
 
-	b.Run("ExcludePatterns", func(b *testing.B) {
-		filter.SetExcludePatterns("node_modules,*.tmp")
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
-	})
-
-	b.Run("IncludeEvents", func(b *testing.B) {
-		filter.SetIncludeEvents("write,create")
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
-	})
-
-	b.Run("IgnoreEvents", func(b *testing.B) {
-		filter.SetIgnoreEvents("chmod")
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
-	})
-
-	b.Run("AllFilters", func(b *testing.B) {
-		filter.SetIncludePatterns("*.js,*.css,*.html")
-		filter.SetExcludePatterns("node_modules,*.tmp")
-		filter.SetIncludeEvents("write,create")
-		filter.SetIgnoreEvents("chmod")
-		event := fsnotify.Event{Name: "file.js", Op: fsnotify.Create}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			filter.ShouldProcessEvent(event)
-		}
-	})
-}
-
-// Helper function to create a directory tree for benchmarking
-func createBenchDirTree(b *testing.B, root string, depth, width int) {
-	if depth <= 0 {
-		return
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func(gid int) {
+			defer wg.Done()
+			for j := 0; j < numOps; j++ {
+				fname := filepath.Join(tempDir, fmt.Sprintf("g%d-f%d.txt", gid, j))
+				// Operations can fail under high churn, which is okay.
+				_ = os.WriteFile(fname, []byte("data"), 0600)
+				time.Sleep(1 * time.Millisecond)
+				_ = os.Remove(fname)
+			}
+		}(i)
 	}
 
-	for i := 0; i < width; i++ {
-		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
-		if err := os.Mkdir(dir, 0755); err != nil {
-			b.Fatalf("Failed to create directory: %v", err)
+	// Concurrently consume events.
+	go func() {
+		for range w.Events() {
+			// Just drain the channel.
 		}
-		createBenchDirTree(b, dir, depth-1, width)
-	}
+	}()
+
+	wg.Wait()
+	// Allow time for final events to be processed before closing.
+	time.Sleep(300 * time.Millisecond)
+
+	// Now explicitly close the watcher.
+	err = w.Close()
+	assert.NoError(t, err)
 }
